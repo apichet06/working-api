@@ -9,20 +9,22 @@ export const list = asyncHandler(async (req, res) => {
 })
 
 export const create = asyncHandler(async (req, res) => {
-    const { cc_code, cc_descriptions } = req.body
-
+    const { cc_code, cc_descriptions, dp_id } = req.body
+    const userId = Number(req.userId);
     const data = await category.CreateCategorytCode({
         cc_code,
-        cc_descriptions
+        cc_descriptions,
+        dp_id,
+        e_id: userId
     })
     res.status(201).json({ data });
 })
 
 export const update = asyncHandler(async (req, res) => {
-    const { cc_code, cc_descriptions } = req.body
+    const { cc_code, cc_descriptions, dp_id } = req.body
     const { cc_id } = req.params
 
-    const data = await category.UpdateCategoryCode(Number(cc_id), { cc_code, cc_descriptions })
+    const data = await category.UpdateCategoryCode(Number(cc_id), { cc_code, cc_descriptions, dp_id, e_id: Number(req.userId) })
 
     res.json({ data });
 })

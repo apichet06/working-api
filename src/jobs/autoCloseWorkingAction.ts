@@ -15,4 +15,6 @@ async function runAutoClose(label: string) {
 export function startAutoCloseWorkingActionJobs() {
     schedule("45 11 * * *", () => runAutoClose("11:45"), { timezone: CRON_TIMEZONE });
     schedule("40 16 * * *", () => runAutoClose("16:40"), { timezone: CRON_TIMEZONE });
+    // เผื่อพนักงานที่ทำ OT ต่อจนดึก แล้วลืมกดปิดงาน
+    schedule("0 0 * * *", () => runAutoClose("00:00"), { timezone: CRON_TIMEZONE });
 }

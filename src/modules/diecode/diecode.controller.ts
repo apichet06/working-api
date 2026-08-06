@@ -1,38 +1,39 @@
 import { asyncHandler } from "../../health/asyncHandler";
-import * as partcode from "./partcode.service"
 import { CommonMessages } from "../../messages";
+import * as Diecode from "./diecode.service"
+
 
 export const list = asyncHandler(async (req, res) => {
-    const data = await partcode.ListPartCode();
+    const data = await Diecode.ListDieCode();
     res.status(200).json({ data })
 })
 
 export const create = asyncHandler(async (req, res) => {
-    const { part_code, part_descriptions, dp_id } = req.body
+    const { die_code, dp_id, die_descriptions } = req.body
     const userId = Number(req.userId);
 
-    const data = await partcode.CreatePartCode({
-        part_code,
-        part_descriptions,
+    const data = await Diecode.CreateDieCode({
+        die_code,
         dp_id,
+        die_descriptions,
         e_id: userId
     })
     res.status(201).json({ data });
 })
 
 export const update = asyncHandler(async (req, res) => {
-    const { part_code, part_descriptions, dp_id } = req.body
-    const { part_id } = req.params
-
-    const data = await partcode.UpdatePartCode(Number(part_id), { part_code, part_descriptions, dp_id, e_id: Number(req.userId) })
+    const { die_code, dp_id, die_descriptions } = req.body
+    const { die_id } = req.params
+    const userId = Number(req.userId);
+    const data = await Diecode.UpdateDieCode(Number(die_id), { die_code, dp_id, die_descriptions, e_id: userId })
 
     res.json({ data });
 })
 
 
 export const remove = asyncHandler(async (req, res) => {
-    const { part_id } = req.params
+    const { die_id } = req.params
 
-    await partcode.DeletePartCode(Number(part_id))
+    await Diecode.DeleteDieCode(Number(die_id))
     res.json({ message: CommonMessages.deleteSuccess })
 })

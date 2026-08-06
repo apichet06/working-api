@@ -2,6 +2,12 @@ import { asyncHandler } from "../../health/asyncHandler"
 import { ApiError } from "../../errors/ApiError"
 import * as WorkingActionsJob from "./action.service"
 
+export const list = asyncHandler(async (req, res) => {
+    const { e_usercode, w_date } = req.query;
+    const data = await WorkingActionsJob.ListWorkingActions(e_usercode as string, w_date as string | undefined)
+    res.status(200).json({ data });
+})
+
 export const listForCalendar = asyncHandler(async (req, res) => {
     const e_id = Number(req.userId);
     const { from, to } = req.query;
@@ -35,7 +41,8 @@ export const UpdateWActionsJob = asyncHandler(async (req, res) => {
 
 export const UpdateWActionsJobByAdmin = asyncHandler(async (req, res) => {
     const { wa_id } = req.params;
-    const { wa_start_job, wa_end_job, e_id, w_id, user_edit, edit_date, mark_status } = req.body;
+    const { wa_start_job, wa_end_job, e_id, w_id, edit_date, mark_status } = req.body;
+    const user_edit = Number(req.userId);
     const data = await WorkingActionsJob.UpdateWorkingActionsJobByAdmin(Number(wa_id), { wa_start_job, wa_end_job, e_id, w_id, user_edit, edit_date, mark_status });
     res.status(200).json({ data });
 })

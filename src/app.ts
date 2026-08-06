@@ -9,32 +9,40 @@ import { errorHandler } from "./errors/errorHandler";
 import partcode from "./modules/partcode/partcode.routes";
 import categorycode from "./modules/category/category.routes";
 import jobcode from "./modules/jobcode/jobcode.routes";
+import machinecode from "./modules/machinecode/machinecode.routes";
+import diecode from "./modules/diecode/diecode.routes";
 import workingmaster from "./modules/workingmaster/master.routes";
 import workingaction from "./modules/workingactoinsjob/action.routes";
-
+import emprouter from "./modules/emp/emp.routes";
+import dashboard from "./modules/dashboard/dashboard.routes";
+import report from "./modules/report/report.routes";
 
 export function createApp() {
-    const app = express();
-    app.use(helmet());
-    app.use(cors());
-    app.use(express.json({ limit: "10mb" }));
-    app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-    app.use(requestLogger);
+  const app = express();
+  app.use(helmet());
+  app.use(cors());
+  app.use(express.json({ limit: "10mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+  app.use(requestLogger);
 
-    app.use("/api", healthRoutes);
+  app.use("/api", healthRoutes);
 
-    app.use("/api/partcode", partcode)
-    app.use("/api/catetory", categorycode)
-    app.use("/api/jobcode", jobcode)
-    app.use("/api/workingmaster", workingmaster)
-    app.use("/api/workingaction", workingaction)
+  app.use("/api/partcode", partcode);
+  app.use("/api/catetory", categorycode);
+  app.use("/api/jobcode", jobcode);
+  app.use("/api/machinecode", machinecode);
+  app.use("/api/diecode", diecode);
+  app.use("/api/workingmaster", workingmaster);
+  app.use("/api/workingaction", workingaction);
+  app.use("/api/emp", emprouter);
+  app.use("/api/dashboard", dashboard);
+  app.use("/api/report", report);
 
+  app.get("/", (_req, res) => {
+    res.status(200).send("Arcana API is running");
+  });
 
-    app.get('/', (_req, res) => {
-        res.status(200).send("Arcana API is running");
-    })
-
-    app.use(notFound);
-    app.use(errorHandler);
-    return app;
+  app.use(notFound);
+  app.use(errorHandler);
+  return app;
 }

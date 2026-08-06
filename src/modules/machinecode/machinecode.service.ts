@@ -1,17 +1,16 @@
 import { ResultSetHeader, RowDataPacket } from "mysql2";
-import { JobCode, JobCodeDTO } from "./type";
+import { MachineCodeInput, MachineCodeDTO } from "./type";
 import { pool } from "../../db/pool";
 import { ApiError, isDupError, isFkConstraintError } from "../../errors/ApiError";
 import { CommonMessages } from "../../messages";
 import { getDepartmentNamesByIds, getEMPNameByIds } from "../emp/emp.service";
 
 
-
-export async function ListJobCode(): Promise<JobCodeDTO[]> {
-    const [rows] = await pool.query<(RowDataPacket & JobCodeDTO)[]>(
-        `SELECT job_id, CAST(job_code AS CHAR) AS job_code, job_descriptions, dp_id, add_date, e_id
-        FROM JobCode
-        Order by job_id desc`
+export async function ListMachineCode(): Promise<MachineCodeDTO[]> {
+    const [rows] = await pool.query<(RowDataPacket & MachineCodeDTO)[]>(
+        `SELECT mac_id, CAST(mac_code AS CHAR) AS mac_code, mac_descriptions, dp_id, add_date, e_id
+        FROM Machine_code
+        Order by mac_id desc`
     );
 
     const departmentById = await getDepartmentNamesByIds([...new Set(rows.map((row) => row.dp_id))]);
@@ -24,16 +23,16 @@ export async function ListJobCode(): Promise<JobCodeDTO[]> {
     }));
 }
 
-export async function CreateJobCode(input: JobCode): Promise<number> {
+export async function CreateMachineCode(input: MachineCodeInput): Promise<number> {
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction()
 
         const [masterRes] = await conn.query<ResultSetHeader>(
-            "INSERT INTO JobCode SET ?", {
-            job_code: input.job_code,
+            "INSERT INTO Machine_code SET ?", {
+            mac_code: input.mac_code,
+            mac_descriptions: input.mac_descriptions,
             dp_id: input.dp_id,
-            job_descriptions: input.job_descriptions,
             e_id: input.e_id
         }
         );
@@ -50,11 +49,11 @@ export async function CreateJobCode(input: JobCode): Promise<number> {
 }
 
 
-export async function UpdateJobCode(job_id: number, input: JobCode): Promise<JobCodeDTO> {
+export async function UpdateMachineCode(mac_id: number, input: MachineCodeInput): Promise<MachineCodeDTO> {
     const data = {
-        job_code: input.job_code,
+        mac_code: input.mac_code,
+        mac_descriptions: input.mac_descriptions,
         dp_id: input.dp_id,
-        job_descriptions: input.job_descriptions,
         e_id: input.e_id
     }
 
@@ -63,16 +62,25 @@ export async function UpdateJobCode(job_id: number, input: JobCode): Promise<Job
     try {
         await conn.beginTransaction()
         const [res] = await conn.query<ResultSetHeader>(
-            "Update JobCode SET ? WHERE job_id =?", [data, job_id]
+            "Update Machine_code SET ? WHERE mac_id =?", [data, mac_id]
         )
 
         if (res.affectedRows === 0) {
             throw new ApiError(404, CommonMessages.notFound);
         }
 
+        const [rows] = await conn.query<(RowDataPacket & MachineCodeDTO)[]>(
+            `SELECT mac_id, CAST(mac_code AS CHAR) AS mac_code, mac_descriptions, dp_id, add_date, e_id
+            FROM Machine_code WHERE mac_id = ?`, [mac_id]
+        );
         const departmentById = await getDepartmentNamesByIds([data.dp_id]);
+        const empNameById = await getEMPNameByIds([data.e_id]);
         await conn.commit();
-        return { job_id, ...data, dp_department: departmentById.get(data.dp_id) ?? null };
+        return {
+            ...rows[0],
+            dp_department: departmentById.get(data.dp_id) ?? null,
+            e_name: empNameById.get(data.e_id) ?? null,
+        };
     } catch (err) {
         await conn.rollback();
         if (isDupError(err)) throw new ApiError(409, CommonMessages.error);
@@ -83,13 +91,13 @@ export async function UpdateJobCode(job_id: number, input: JobCode): Promise<Job
 
 }
 
-export async function DeleteJobCode(id: number): Promise<void> {
+export async function DeleteMachineCode(id: number): Promise<void> {
     const conn = await pool.getConnection();
 
     try {
         await conn.beginTransaction()
         const [res] = await conn.query<ResultSetHeader>(
-            "DELETE FROM JobCode WHERE job_id = ?", [id]
+            "DELETE FROM Machine_code WHERE mac_id = ?", [id]
         );
 
         if (res.affectedRows === 0) {

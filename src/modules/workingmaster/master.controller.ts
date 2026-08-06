@@ -10,8 +10,20 @@ export const ListWorkingMaster = asyncHandler(async (req, res) => {
     res.status(200).json({ data })
 })
 
+export const ListWorkingMasterHistory = asyncHandler(async (req, res) => {
+    const e_id = Number(req.userId);
+    const { from, to } = req.query;
+
+    if (typeof from !== "string" || typeof to !== "string") {
+        throw new ApiError(400, "from และ to จำเป็นต้องระบุ");
+    }
+
+    const data = await WorkingMaster.ListWorkingMasterHistory(e_id, from, to);
+    res.status(200).json({ data })
+})
+
 export const create = asyncHandler(async (req, res) => {
-    const { job_code, job_id, cc_id, w_project_no, part_id, cc_code, part_code, w_desc } = req.body
+    const { job_code, job_id, cc_id, w_project_no, part_id, mac_id, cc_code, part_code, w_desc } = req.body
     const e_id = Number(req.userId);
     const usercode = req.usercode;
 
@@ -25,6 +37,7 @@ export const create = asyncHandler(async (req, res) => {
         job_id,
         cc_id,
         part_id,
+        mac_id: mac_id ?? null,
         cc_code,
         part_code,
         w_desc,
@@ -35,7 +48,7 @@ export const create = asyncHandler(async (req, res) => {
 })
 
 export const update = asyncHandler(async (req, res) => {
-    const { job_code, job_id, cc_id, w_project_no, part_id, cc_code, part_code, w_desc } = req.body
+    const { job_code, job_id, cc_id, w_project_no, part_id, mac_id, cc_code, part_code, w_desc } = req.body
     const { w_id } = req.params
     const e_id = Number(req.userId);
     const usercode = req.usercode;
@@ -49,6 +62,7 @@ export const update = asyncHandler(async (req, res) => {
         job_id,
         cc_id,
         part_id,
+        mac_id: mac_id ?? null,
         cc_code,
         part_code,
         w_desc,

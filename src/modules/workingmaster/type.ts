@@ -5,6 +5,7 @@ export type WorkingMaster = {
     job_id: number,
     cc_id: number,
     part_id: number,
+    mac_id: number | null,
     cc_code: string,
     part_code: string,
     w_desc: string,
@@ -19,6 +20,7 @@ export type WorkingMasterDTO = {
     w_project_no: string,
     cc_id: number,
     part_id: number,
+    mac_id: number | null,
     cc_code: string,
     part_code: string,
     w_desc: string,
@@ -32,5 +34,8 @@ export type WorkingMasterDTO = {
     edit_date: Date | null,
     cc_descriptions: string,
     job_descriptions: string,
-    part_descriptions: string
+    part_descriptions: string,
+    mac_code: string | null,
+    mac_descriptions: string | null,
+    die_descriptions: string | null
 }

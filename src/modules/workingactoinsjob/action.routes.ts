@@ -9,6 +9,7 @@ action.put("/auto-close", controller.UpdateWAJobAutoSystem)
 
 action.use(Auth);
 
+action.get("/list", controller.list)
 action.get("/", controller.listForCalendar)
 action.post("/", controller.create)
 action.put("/:wa_id", controller.UpdateWActionsJob)

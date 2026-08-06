@@ -6,8 +6,9 @@ import { CommonMessages } from "../../messages";
 
 // join เฉพาะ WorkingActionJob แถวล่าสุดของแต่ละ w_id กัน 1 WorkingMaster ออกเป็นหลายแถว
 const WORKING_MASTER_SELECT = `
-   SELECT a.w_id, a.e_usercode, a.job_code, a.job_id, a.cc_id, a.part_id, a.cc_code, a.part_code, a.w_desc, a.e_id, a.w_date,
-    b.wa_id, b.wa_start_job, b.wa_end_job, b.wa_status, b.user_edit, b.edit_date,a.w_project_no,c.cc_descriptions,d.job_descriptions,part_descriptions
+   SELECT a.w_id, a.e_usercode, a.job_code, a.job_id, a.cc_id, a.part_id, a.mac_id, a.cc_code, a.part_code, a.w_desc, a.e_id, a.w_date,
+    b.wa_id, b.wa_start_job, b.wa_end_job, b.wa_status, b.user_edit, b.edit_date,a.w_project_no,c.cc_descriptions,d.job_descriptions,part_descriptions,
+    f.mac_code, f.mac_descriptions, g.die_descriptions
     FROM WorkingMaster a
     LEFT JOIN WorkingActionJob b
     ON b.wa_id = (
@@ -18,12 +19,23 @@ const WORKING_MASTER_SELECT = `
     INNER JOIN Category_Code c ON c.cc_id = a.cc_id
     INNER JOIN JobCode d ON d.job_id = a.job_id
     INNER JOIN PartCode e ON e.part_id = a.part_id
+    LEFT JOIN Machine_code f ON f.mac_id = a.mac_id
+    LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = a.w_project_no
 `;
 
 export async function ListWorkingMaster(e_id: number): Promise<WorkingMasterDTO[]> {
     const [rows] = await pool.query<(WorkingMasterDTO & RowDataPacket)[]>(
         `${WORKING_MASTER_SELECT} WHERE a.e_id = ? and DATE(a.w_date) = CURDATE() ORDER BY a.w_id asc`,
         [e_id]
+    );
+    return rows;
+}
+
+// สำหรับหน้า working checking: ดู/แก้ไขงานย้อนหลังของตัวเอง (ไม่จำกัดแค่วันนี้เหมือน ListWorkingMaster)
+export async function ListWorkingMasterHistory(e_id: number, from: string, to: string): Promise<WorkingMasterDTO[]> {
+    const [rows] = await pool.query<(WorkingMasterDTO & RowDataPacket)[]>(
+        `${WORKING_MASTER_SELECT} WHERE a.e_id = ? AND DATE(a.w_date) BETWEEN ? AND ? ORDER BY a.w_id desc`,
+        [e_id, from, to]
     );
     return rows;
 }
@@ -38,6 +50,7 @@ export async function CreateWorkingMaster(input: WorkingMaster): Promise<number>
             job_id: input.job_id,
             cc_id: input.cc_id,
             part_id: input.part_id,
+            mac_id: input.mac_id,
             cc_code: input.cc_code,
             part_code: input.part_code,
             w_desc: input.w_desc,
@@ -71,6 +84,7 @@ export async function UpdateWorkingMaster(w_id: number, input: WorkingMaster): P
             job_id: input.job_id,
             cc_id: input.cc_id,
             part_id: input.part_id,
+            mac_id: input.mac_id,
             cc_code: input.cc_code,
             part_code: input.part_code,
             w_desc: input.w_desc,

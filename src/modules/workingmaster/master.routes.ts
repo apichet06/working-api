@@ -7,6 +7,7 @@ const workingmaster = Router()
 
 workingmaster.use(Auth);
 workingmaster.get("/", controller.ListWorkingMaster)
+workingmaster.get("/history", controller.ListWorkingMasterHistory)
 workingmaster.post("/", controller.create)
 workingmaster.put("/:w_id", controller.update)
 workingmaster.delete("/:w_id", controller.remove)
