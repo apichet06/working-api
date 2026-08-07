@@ -24,6 +24,7 @@ export type JobBreakdownRow = {
 
 export type ProjectBreakdownRow = {
     w_project_no: string;
+    die_descriptions: string | null;
     total_hours: number;
     job_hour: number;
 };

@@ -81,15 +81,18 @@ export async function GetMonthlyJobBreakdown(year: number, month: number, e_id: 
 }
 
 // สรุปเวลาที่ใช้ แยกตามเลขที่โปรเจกต์ (w_project_no) เพื่อดูว่าเวลาไปลงกับโปรเจกต์ไหนเยอะสุด
+// LEFT JOIN DieCode เผื่อ w_project_no ตรงกับ die_code (ไม่ใช่ทุกโปรเจกต์จะเป็นดาย บางอันเป็น free text) จะได้ die_descriptions มาโชว์เป็นชื่ออ่านรู้เรื่องแทนรหัสเปล่าๆ
+// (pattern เดียวกับที่ใช้ใน master.service.ts / action.service.ts — ต้อง CAST เป็น CHAR กัน collation ชนกัน)
 export async function GetYearlyProjectBreakdown(year: number, e_id: number): Promise<ProjectBreakdownRow[]> {
     const [rows] = await pool.query<(ProjectBreakdownRow & RowDataPacket)[]>(
-        `SELECT b.w_project_no,
+        `SELECT b.w_project_no, g.die_descriptions,
             ROUND(SUM(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job)) / 3600, 2) AS total_hours,
             ROUND(SUM(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job)) / 86400, 2) AS job_hour
          FROM WorkingActionJob a
          INNER JOIN WorkingMaster b ON a.w_id = b.w_id
+         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = b.w_project_no
          WHERE YEAR(a.wa_start_job) = ? AND a.wa_end_job IS NOT NULL AND a.e_id = ?
-         GROUP BY b.w_project_no
+         GROUP BY b.w_project_no, g.die_descriptions
          ORDER BY total_hours DESC`,
         [year, e_id]
     );
@@ -98,13 +101,14 @@ export async function GetYearlyProjectBreakdown(year: number, e_id: number): Pro
 
 export async function GetMonthlyProjectBreakdown(year: number, month: number, e_id: number): Promise<ProjectBreakdownRow[]> {
     const [rows] = await pool.query<(ProjectBreakdownRow & RowDataPacket)[]>(
-        `SELECT b.w_project_no,
+        `SELECT b.w_project_no, g.die_descriptions,
             ROUND(SUM(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job)) / 3600, 2) AS total_hours,
             ROUND(SUM(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job)) / 86400, 2) AS job_hour
          FROM WorkingActionJob a
          INNER JOIN WorkingMaster b ON a.w_id = b.w_id
+         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = b.w_project_no
          WHERE YEAR(a.wa_start_job) = ? AND MONTH(a.wa_start_job) = ? AND a.wa_end_job IS NOT NULL AND a.e_id = ?
-         GROUP BY b.w_project_no
+         GROUP BY b.w_project_no, g.die_descriptions
          ORDER BY total_hours DESC`,
         [year, month, e_id]
     );
