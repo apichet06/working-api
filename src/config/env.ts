@@ -21,4 +21,11 @@ export const env = {
     DB_PASSWORD_EMP: must("DB_PASSWORD_EMP"),
     DB_NAME_EMP: must("DB_NAME_EMP"),
     DB_PORT_EMP: Number(process.env.DB_PORT_EMP ?? 3306),
+
+    DB_HOST_DT: must("DB_HOST_DT"),
+    DB_USER_DT: must("DB_USER_DT"),
+    DB_PASSWORD_DT: must("DB_PASSWORD_DT"),
+    DB_NAME_DT: must("DB_NAME_DT"),
+    DB_SERVICE_DT: must("DB_SERVICE_DT"),
+    DB_PORT_DT: Number(process.env.DB_PORT_DT ?? 1521),
 };
