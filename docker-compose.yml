@@ -8,6 +8,13 @@ services:
     env_file:
       - .env
 
+    environment:
+      # .env มีค่านี้เป็น path แบบ Windows (สำหรับรัน native ตอน npm run dev) ต้อง override
+      # เป็น path ของ Linux ข้างใน container แทน ไม่งั้นจะไปทับค่าที่ Dockerfile ตั้งไว้
+      # (environment: มีสิทธิ์เหนือกว่า env_file: สำหรับ key เดียวกัน)
+      ORACLE_CLIENT_LIB_DIR: /opt/oracle/instantclient
+      DB_HOST: host.docker.internal
+
     ports:
       - "5001:5001"
 
