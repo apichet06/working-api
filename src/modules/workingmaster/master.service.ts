@@ -6,7 +6,7 @@ import { CommonMessages } from "../../messages";
 
 // join เฉพาะ WorkingActionJob แถวล่าสุดของแต่ละ w_id กัน 1 WorkingMaster ออกเป็นหลายแถว
 const WORKING_MASTER_SELECT = `
-   SELECT a.w_id, a.e_usercode, a.job_code, a.job_id, a.cc_id, a.part_id, a.mac_id, a.cc_code, a.part_code, a.w_desc, a.e_id, a.w_date,
+   SELECT a.w_id, a.e_usercode, a.job_code, a.job_id, a.cc_id, a.part_id, a.mac_id, a.cc_code, a.part_code, a.w_desc, a.e_id, a.w_date, a.end_job,
     b.wa_id, b.wa_start_job, b.wa_end_job, b.wa_status, b.user_edit, b.edit_date,a.w_project_no,c.cc_descriptions,d.job_descriptions,part_descriptions,
     f.mac_code, f.mac_descriptions, g.die_descriptions
     FROM WorkingMaster a
@@ -23,9 +23,10 @@ const WORKING_MASTER_SELECT = `
     LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = a.w_project_no
 `;
 
+// แสดงค้างไว้ทุกวันจนกว่าจะกด "จบงาน" (end_job = 1) ไม่จำกัดแค่วันนี้เหมือนเดิม
 export async function ListWorkingMaster(e_id: number): Promise<WorkingMasterDTO[]> {
     const [rows] = await pool.query<(WorkingMasterDTO & RowDataPacket)[]>(
-        `${WORKING_MASTER_SELECT} WHERE a.e_id = ? and DATE(a.w_date) = CURDATE() ORDER BY a.w_id asc`,
+        `${WORKING_MASTER_SELECT} WHERE a.e_id = ? and a.end_job = 0 ORDER BY a.w_id asc`,
         [e_id]
     );
     return rows;
@@ -113,6 +114,33 @@ export async function UpdateWorkingMaster(w_id: number, input: WorkingMaster): P
         conn.release();
     }
 }
+export async function EndWorkingMaster(w_id: number): Promise<void> {
+    const conn = await pool.getConnection();
+    try {
+        await conn.beginTransaction();
+
+        // ถ้ายังมี timer ค้างอยู่ (กด "เริ่มงาน" ไว้แต่ยังไม่ได้ "ปิดงาน") ให้ปิดให้อัตโนมัติตอนจบงาน
+        await conn.query<ResultSetHeader>(
+            "UPDATE WorkingActionJob SET wa_status = ?, wa_end_job = ? WHERE w_id = ? AND wa_end_job IS NULL",
+            ["ผู้ใช้จบงาน", new Date(), w_id]
+        );
+
+        const [res] = await conn.query<ResultSetHeader>(
+            "UPDATE WorkingMaster SET end_job = 1 WHERE w_id = ?", [w_id]
+        );
+        if (res.affectedRows === 0) {
+            throw new ApiError(404, CommonMessages.notFound);
+        }
+
+        await conn.commit();
+    } catch (err) {
+        await conn.rollback();
+        throw err;
+    } finally {
+        conn.release();
+    }
+}
+
 export async function DeleteWorkingMaster(w_id: number): Promise<void> {
     const conn = await pool.getConnection();
     try {

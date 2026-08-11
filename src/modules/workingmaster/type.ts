@@ -37,5 +37,6 @@ export type WorkingMasterDTO = {
     part_descriptions: string,
     mac_code: string | null,
     mac_descriptions: string | null,
-    die_descriptions: string | null
+    die_descriptions: string | null,
+    end_job: number
 }
