@@ -25,7 +25,10 @@ export const env = {
     DB_HOST_DT: must("DB_HOST_DT"),
     DB_USER_DT: must("DB_USER_DT"),
     DB_PASSWORD_DT: must("DB_PASSWORD_DT"),
-    DB_NAME_DT: must("DB_NAME_DT"),
     DB_SERVICE_DT: must("DB_SERVICE_DT"),
     DB_PORT_DT: Number(process.env.DB_PORT_DT ?? 1521),
+
+    // ตั้งค่านี้เมื่อ Oracle server เก่าเกินกว่า node-oracledb Thin mode จะรองรับ (NJS-138)
+    // ต้องลง Oracle Instant Client แล้วชี้ path มาที่นี่ ถึงจะสลับไปโหมด Thick ให้อัตโนมัติ
+    ORACLE_CLIENT_LIB_DIR: process.env.ORACLE_CLIENT_LIB_DIR,
 };

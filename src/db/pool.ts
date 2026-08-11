@@ -41,6 +41,11 @@ export const poolEmp = mysql.createPool({
 export let poolOracle: oracledb.Pool;
 
 export async function initOraclePool() {
+    // Oracle server เก่าเกินกว่า Thin mode (default) จะต่อได้ -> ต้องสลับไป Thick mode ผ่าน Instant Client
+    if (env.ORACLE_CLIENT_LIB_DIR) {
+        oracledb.initOracleClient({ libDir: env.ORACLE_CLIENT_LIB_DIR });
+    }
+
     poolOracle = await oracledb.createPool({
         user: env.DB_USER_DT,
         password: env.DB_PASSWORD_DT,
