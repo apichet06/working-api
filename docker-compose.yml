@@ -1,0 +1,19 @@
+services:
+  working-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: working-report-api
+
+    env_file:
+      - .env
+
+    ports:
+      - "5001:5001"
+
+    restart: unless-stopped
+
+    extra_hosts:
+      # container มองเห็น host machine ผ่านชื่อนี้ (Docker Desktop) ใช้แทน "localhost"
+      # ใน DB_HOST ถ้า MySQL หลัก (system_working) รันอยู่บนเครื่อง host เอง ไม่ได้อยู่ใน container
+      - "host.docker.internal:host-gateway"

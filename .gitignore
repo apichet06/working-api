@@ -19,3 +19,7 @@ yarn-error.log*
 
 # misc
 .DS_Store
+
+# Oracle Instant Client - binary ที่โหลดแยกเองต่อเครื่อง ไม่ commit เข้า git
+# (เกิน GitHub 100MB limit และผิด license ถ้า redistribute ผ่าน git)
+/oracle-instantclient/
