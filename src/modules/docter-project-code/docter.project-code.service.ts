@@ -13,6 +13,7 @@ export async function ListMfgNo(): Promise<string[]> {
                 ON a.PART_NO = b.PART_NO AND a.MFGNO = b.MFGNO
             INNER JOIN  DOCTOR_PRO_DATA.T_PLANNED_PROCESS c
                 ON a.PROCESS_CD = c.PLAN_PROC_CD
+            WHERE (LENGTH(a.MFGNO) - LENGTH(REPLACE(a.MFGNO, '-', ''))) = 1
             ORDER BY a.MFGNO ASC`,
     );
 
