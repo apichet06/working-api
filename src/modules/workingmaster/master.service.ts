@@ -8,7 +8,13 @@ import { CommonMessages } from "../../messages";
 const WORKING_MASTER_SELECT = `
    SELECT a.w_id, a.e_usercode, a.job_code, a.job_id, a.cc_id, a.part_id, a.mac_id, a.cc_code, a.part_code, a.w_desc, a.e_id, a.w_date, a.end_job,
     b.wa_id, b.wa_start_job, b.wa_end_job, b.wa_status, b.user_edit, b.edit_date,a.w_project_no,c.cc_descriptions,d.job_descriptions,part_descriptions,
-    f.mac_code, f.mac_descriptions, g.die_descriptions
+    f.mac_code, f.mac_descriptions, g.die_descriptions,
+    -- ผ่านไปกี่วินาทีแล้ว คำนวณจาก MySQL server เอง (wa_start_job เทียบกับ NOW() ของตัวมันเอง)
+    -- ไม่เอานาฬิกาเครื่อง client มาเทียบ กัน browser/server เวลาไม่ตรงกันแล้วนับผิด/ค้าง
+    CASE WHEN b.wa_start_job IS NOT NULL AND b.wa_end_job IS NULL
+        THEN TIMESTAMPDIFF(SECOND, b.wa_start_job, NOW())
+        ELSE NULL
+    END AS elapsed_seconds
     FROM WorkingMaster a
     LEFT JOIN WorkingActionJob b
     ON b.wa_id = (

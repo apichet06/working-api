@@ -38,5 +38,8 @@ export type WorkingMasterDTO = {
     mac_code: string | null,
     mac_descriptions: string | null,
     die_descriptions: string | null,
-    end_job: number
+    end_job: number,
+    // คำนวณจาก MySQL server เอง (TIMESTAMPDIFF กับ NOW() ของ server เดียวกัน) ไม่ใช่เทียบกับนาฬิกาเครื่อง
+    // client เลย กัน browser/server เวลาไม่ตรงกันแล้ว elapsed ผิด - null ถ้ายังไม่เริ่มงาน
+    elapsed_seconds: number | null
 }
