@@ -1,31 +1,30 @@
 import { poolOracle } from "../../db/pool";
 import { MfgNoRow } from "./type";
 
-const MFG_NO_LIMIT = 150;
-
 export async function ListMfgNo(term: string): Promise<string[]> {
   const conn = await poolOracle.getConnection();
   try {
-    // ROWNUM ต้อง apply หลัง ORDER BY เสมอ (ครอบ subquery) ไม่งั้นจะตัดก่อนเรียงลำดับ
-    // ได้ผลลัพธ์ตามลำดับที่ Oracle เจอโดยบังเอิญ ไม่ใช่ 150 ตัวแรกตามตัวอักษรจริงๆ
-    // (เลี่ยง FETCH FIRST...ROWS ONLY เพราะ server นี้เก่ากว่า Oracle 12c ที่เพิ่งรองรับ syntax นั้น)
-    // ค้นหาจาก term ที่พิมพ์ตรงๆ ทุกครั้ง (ไม่ใช่ filter จาก snapshot เดิม) เจอได้ทุกตัวจริง
-    // แค่จำกัดจำนวนต่อครั้งไว้กัน query ช้า/หน่วง
+    // ไม่จำกัดจำนวนแถวที่ Oracle คืนมา (ไม่ ROWNUM) เพราะ query ถูก filter ด้วย term
+    // ที่พิมพ์จริงอยู่แล้วทุกครั้ง ไม่ใช่ snapshot คงที่ - ตัดจำนวนที่โชว์บน dropdown
+    // ไปทำที่ frontend แทน (Combobox limit prop) กันเคส "หาไม่เจอเพราะโดนตัดตอนโหลด" ซ้ำ
+    //
+    // กรองรหัสแปลกที่มีขีดพอดี 1 ตัวแต่ข้างหลังขีดไม่ใช่ตัวเลขล้วนๆ ออกด้วย
+    // (เช่น "KNA-39SPARE CORE PIN" เป็นข้อมูลเพี้ยนในฐาน ไม่ใช่รหัสโปรเจกต์จริง)
+    // ไม่ใช้ REGEXP_LIKE เพราะ server นี้เก่ากว่า Oracle 11g ที่เพิ่งมีฟังก์ชันนี้
     const result = await conn.execute<MfgNoRow>(
-      `SELECT * FROM (
-            SELECT DISTINCT
-                a.MFGNO AS MGFNO
-            FROM
-                DOCTOR_PRO_DATA.T_PROCESSNO a
-            INNER JOIN DOCTOR_PRO_DATA.T_PARTNO b
-                ON a.PART_NO = b.PART_NO AND a.MFGNO = b.MFGNO
-            INNER JOIN  DOCTOR_PRO_DATA.T_PLANNED_PROCESS c
-                ON a.PROCESS_CD = c.PLAN_PROC_CD
-            WHERE (LENGTH(a.MFGNO) - LENGTH(REPLACE(a.MFGNO, '-', ''))) = 1
-                AND a.MFGNO LIKE '%' || :term || '%'
-            ORDER BY a.MFGNO ASC
-        ) WHERE ROWNUM <= :rowLimit`,
-      { term: term.toUpperCase(), rowLimit: MFG_NO_LIMIT },
+      `SELECT DISTINCT
+            a.MFGNO AS MGFNO
+        FROM
+            DOCTOR_PRO_DATA.T_PROCESSNO a
+        INNER JOIN DOCTOR_PRO_DATA.T_PARTNO b
+            ON a.PART_NO = b.PART_NO AND a.MFGNO = b.MFGNO
+        INNER JOIN  DOCTOR_PRO_DATA.T_PLANNED_PROCESS c
+            ON a.PROCESS_CD = c.PLAN_PROC_CD
+        WHERE (LENGTH(a.MFGNO) - LENGTH(REPLACE(a.MFGNO, '-', ''))) = 1
+            AND TRANSLATE(SUBSTR(a.MFGNO, INSTR(a.MFGNO, '-') + 1), 'x0123456789', 'x') IS NULL
+            AND a.MFGNO LIKE '%' || :term || '%'
+        ORDER BY a.MFGNO ASC`,
+      { term: term.toUpperCase() },
     );
 
     return (result.rows ?? []).map((row) => row.MGFNO);
