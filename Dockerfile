@@ -32,6 +32,11 @@ RUN mkdir -p /opt/oracle/instantclient \
 ENV ORACLE_CLIENT_LIB_DIR=/opt/oracle/instantclient
 ENV LD_LIBRARY_PATH=/opt/oracle/instantclient
 
+# container default เป็น UTC แต่ระบบทั้งหมด (mysql2 timezone:'local', cron ใน
+# autoCloseWorkingAction.ts) ตั้งสมมติฐานว่าเป็นเวลาไทยเสมอ ไม่ตั้งค่านี้จะทำให้เวลาที่บันทึก/
+# คำนวณ (เช่น wa_start_job) เพี้ยนไป 7 ชั่วโมงเทียบกับเวลาจริง
+ENV TZ=Asia/Bangkok
+
 COPY package*.json ./
 RUN npm ci --omit=dev
 
