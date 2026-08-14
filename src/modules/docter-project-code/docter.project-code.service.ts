@@ -1,7 +1,15 @@
 import { poolOracle } from "../../db/pool";
 import { MfgNoRow } from "./type";
+import { ApiError } from "../../errors/ApiError";
 
 export async function ListMfgNo(term: string): Promise<string[]> {
+  // poolOracle อาจยังไม่ถูกตั้งค่าเลยถ้า initOraclePool() ต่อไม่ได้ตอน server start
+  // (เช่น เครื่อง dev ที่ไม่ได้อยู่วง network เดียวกับ Oracle) - โยน error ที่อ่านออก
+  // แทนที่จะปล่อยให้ .getConnection() ของ undefined พังแบบ TypeError ดิบๆ
+  if (!poolOracle) {
+    throw new ApiError(503, "ระบบข้อมูล Oracle (Doctor Pro) ไม่พร้อมใช้งานในขณะนี้");
+  }
+
   const conn = await poolOracle.getConnection();
   try {
     // ไม่จำกัดจำนวนแถวที่ Oracle คืนมา (ไม่ ROWNUM) เพราะ query ถูก filter ด้วย term
