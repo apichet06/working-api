@@ -14,5 +14,6 @@ action.get("/", controller.listForCalendar)
 action.post("/", controller.create)
 action.put("/:wa_id", controller.UpdateWActionsJob)
 action.put("/:wa_id/admin", controller.UpdateWActionsJobByAdmin)
+action.put("/:wa_id/detail", controller.UpdateWActionsJobDetail)
 
 export default action

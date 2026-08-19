@@ -46,3 +46,16 @@ export const UpdateWActionsJobByAdmin = asyncHandler(async (req, res) => {
     const data = await WorkingActionsJob.UpdateWorkingActionsJobByAdmin(Number(wa_id), { wa_start_job, wa_end_job, e_id, w_id, user_edit, edit_date, mark_status });
     res.status(200).json({ data });
 })
+
+// แก้ไขเนื้อหางาน (job/category/part/machine/รายละเอียด/โปรเจกต์) ของ WorkingActionJob โดยตรง ไม่แตะเวลา — ใช้โดยหน้า "ตรวจสอบ/แก้ไขงานย้อนหลัง"
+export const UpdateWActionsJobDetail = asyncHandler(async (req, res) => {
+    const { wa_id } = req.params;
+    const { job_id, job_code, cc_id, cc_code, part_id, part_code, mac_id, w_desc, w_project_no } = req.body;
+    const user_edit = Number(req.userId);
+    const data = await WorkingActionsJob.UpdateWorkingActionJobDetail(
+        Number(wa_id),
+        { job_id, job_code, cc_id, cc_code, part_id, part_code, mac_id: mac_id ?? null, w_desc, w_project_no },
+        user_edit,
+    );
+    res.status(200).json({ data });
+})

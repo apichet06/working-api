@@ -8,6 +8,19 @@ export type WorkingActions = {
   mark_status: string;
 };
 
+// เนื้อหางาน (ไม่รวมเวลา) ที่แก้ไขได้โดยตรงบน WorkingActionJob — ใช้โดยหน้า "ตรวจสอบ/แก้ไขงานย้อนหลัง"
+export type WorkingActionJobDetailInput = {
+  job_id: number;
+  job_code: string;
+  cc_id: number;
+  cc_code: string;
+  part_id: number;
+  part_code: string;
+  mac_id: number | null;
+  w_desc: string;
+  w_project_no: string;
+};
+
 export type WorkingActionsDTO = {
   wa_id: number;
   wa_start_job: Date;

@@ -41,5 +41,8 @@ export type WorkingMasterDTO = {
     end_job: number,
     // คำนวณจาก MySQL server เอง (TIMESTAMPDIFF กับ NOW() ของ server เดียวกัน) ไม่ใช่เทียบกับนาฬิกาเครื่อง
     // client เลย กัน browser/server เวลาไม่ตรงกันแล้ว elapsed ผิด - null ถ้ายังไม่เริ่มงาน
-    elapsed_seconds: number | null
+    elapsed_seconds: number | null,
+    // มีเฉพาะแถวจาก ListWorkingMasterHistory (งานที่ปิดแล้ว) — ListWorkingMaster (งานที่ยังเปิดอยู่) ไม่มีค่าพวกนี้
+    job_hour?: number,
+    labour_hour?: number
 }

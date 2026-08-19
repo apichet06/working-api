@@ -3,6 +3,7 @@ import { pool } from "../../db/pool";
 import { WorkingMaster, WorkingMasterDTO } from "./type";
 import { ApiError, isDupError, isFkConstraintError } from "../../errors/ApiError";
 import { CommonMessages } from "../../messages";
+import { SNAPSHOT_MASTER_ON_CLOSE_SQL } from "../workingactoinsjob/action.service";
 
 // join เฉพาะ WorkingActionJob แถวล่าสุดของแต่ละ w_id กัน 1 WorkingMaster ออกเป็นหลายแถว
 const WORKING_MASTER_SELECT = `
@@ -39,12 +40,39 @@ export async function ListWorkingMaster(e_id: number): Promise<WorkingMasterDTO[
 }
 
 // สำหรับหน้า working checking: ดู/แก้ไขงานย้อนหลังของตัวเอง (ไม่จำกัดแค่วันนี้เหมือน ListWorkingMaster)
+// หนึ่งแถว = หนึ่ง WorkingActionJob จริงที่ปิดแล้ว (ไม่ใช่หนึ่งแถวต่อ WorkingMaster เหมือน WORKING_MASTER_SELECT)
+// เพราะ WorkingMaster ตัวเดียวค้างข้ามหลายวันได้ ถ้ายังผูกกับ w_date/wa_id ล่าสุดของ master แถวเดียว
+// wa_id ที่ได้จะไม่ตรงกับวันที่กำลังดู/แก้ไขอยู่ — ที่นี่กรองด้วยวันที่ของ WorkingActionJob เอง (wa_start_job) แทน ให้แต่ละแถวสัมพันธ์กันจริง
+// classification ใช้ COALESCE(a.field, b.field) แบบเดียวกับ read path อื่นๆ (อ่าน snapshot ของ WorkingActionJob ก่อนเสมอ ไม่ join สดกับ WorkingMaster ถ้าปิดงานไปแล้ว)
 export async function ListWorkingMasterHistory(e_id: number, from: string, to: string): Promise<WorkingMasterDTO[]> {
     const [rows] = await pool.query<(WorkingMasterDTO & RowDataPacket)[]>(
-        `${WORKING_MASTER_SELECT} WHERE a.e_id = ? AND DATE(a.w_date) BETWEEN ? AND ? ORDER BY a.w_id desc`,
+        `SELECT b.w_id, b.e_usercode, COALESCE(a.job_code, b.job_code) AS job_code, COALESCE(a.job_id, b.job_id) AS job_id,
+                COALESCE(a.w_project_no, b.w_project_no) AS w_project_no, COALESCE(a.cc_id, b.cc_id) AS cc_id,
+                COALESCE(a.part_id, b.part_id) AS part_id, COALESCE(a.mac_id, b.mac_id) AS mac_id,
+                COALESCE(a.cc_code, b.cc_code) AS cc_code, COALESCE(a.part_code, b.part_code) AS part_code,
+                COALESCE(a.w_desc, b.w_desc) AS w_desc, b.e_id, DATE(a.wa_start_job) AS w_date,
+                a.wa_id, a.wa_start_job, a.wa_end_job, a.wa_status, a.user_edit, a.edit_date,
+                c.cc_descriptions, d.job_descriptions, e.part_descriptions, f.mac_code, f.mac_descriptions, g.die_descriptions,
+                b.end_job, NULL AS elapsed_seconds,
+                ROUND(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job) / 86400, 2) AS job_hour,
+                ROUND(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job) / 3600, 2) AS labour_hour
+         FROM WorkingActionJob a
+         INNER JOIN WorkingMaster b ON a.w_id = b.w_id
+         INNER JOIN Category_Code c ON COALESCE(a.cc_id, b.cc_id) = c.cc_id
+         INNER JOIN JobCode d ON COALESCE(a.job_id, b.job_id) = d.job_id
+         INNER JOIN PartCode e ON COALESCE(a.part_id, b.part_id) = e.part_id
+         LEFT JOIN Machine_code f ON f.mac_id = COALESCE(a.mac_id, b.mac_id)
+         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no)
+         WHERE a.e_id = ? AND DATE(a.wa_start_job) BETWEEN ? AND ? AND a.wa_end_job IS NOT NULL
+         ORDER BY a.wa_start_job DESC`,
         [e_id, from, to]
     );
-    return rows;
+    // mysql2 ส่งค่าจาก ROUND() (DECIMAL) กลับมาเป็น string โดย default ต้อง cast เป็น number เอง
+    return rows.map((row) => ({
+        ...row,
+        job_hour: Number(row.job_hour),
+        labour_hour: Number(row.labour_hour),
+    }));
 }
 
 export async function CreateWorkingMaster(input: WorkingMaster): Promise<number> {
@@ -127,7 +155,10 @@ export async function EndWorkingMaster(w_id: number): Promise<void> {
 
         // ถ้ายังมี timer ค้างอยู่ (กด "เริ่มงาน" ไว้แต่ยังไม่ได้ "ปิดงาน") ให้ปิดให้อัตโนมัติตอนจบงาน
         await conn.query<ResultSetHeader>(
-            "UPDATE WorkingActionJob SET wa_status = ?, wa_end_job = ? WHERE w_id = ? AND wa_end_job IS NULL",
+            `UPDATE WorkingActionJob a
+             INNER JOIN WorkingMaster b ON b.w_id = a.w_id
+             SET a.wa_status = ?, a.wa_end_job = ?, ${SNAPSHOT_MASTER_ON_CLOSE_SQL}
+             WHERE a.w_id = ? AND a.wa_end_job IS NULL`,
             ["ผู้ใช้จบงาน", new Date(), w_id]
         );
 
