@@ -46,7 +46,7 @@ export async function ListMfgNo(term: string): Promise<string[]> {
         ORDER BY a.MFGNO ASC`,
       { term: term.toUpperCase() },
     );
-    return (result.rows ?? []).map((row) => row.MGFNO);
+    return (result.rows ?? []).map((row) => String(row.MGFNO));
   } finally {
     await conn.close();
   }
