@@ -1,6 +1,7 @@
 import { pool } from "../../db/pool";
 import { RowDataPacket } from "mysql2/promise";
 import { YearlySummaryRow, MonthlySummaryRow, EmployeeJobCountRow, JobBreakdownRow, ProjectBreakdownRow } from "./type";
+import { getEmpDepartmentId } from "../emp/emp.service";
 
 // mysql2 ส่งค่าจาก ROUND()/SUM() (DECIMAL) กลับมาเป็น string โดย default ต้อง cast เป็น number เอง
 function toNumberHours<T extends { total_hours: number; job_hour: number }>(rows: T[]): T[] {
@@ -84,33 +85,35 @@ export async function GetMonthlyJobBreakdown(year: number, month: number, e_id: 
 // LEFT JOIN DieCode เผื่อ w_project_no ตรงกับ die_code (ไม่ใช่ทุกโปรเจกต์จะเป็นดาย บางอันเป็น free text) จะได้ die_descriptions มาโชว์เป็นชื่ออ่านรู้เรื่องแทนรหัสเปล่าๆ
 // (pattern เดียวกับที่ใช้ใน master.service.ts / action.service.ts — ต้อง CAST เป็น CHAR กัน collation ชนกัน)
 export async function GetYearlyProjectBreakdown(year: number, e_id: number): Promise<ProjectBreakdownRow[]> {
+    const departmentId = await getEmpDepartmentId(e_id);
     const [rows] = await pool.query<(ProjectBreakdownRow & RowDataPacket)[]>(
         `SELECT COALESCE(a.w_project_no, b.w_project_no) AS w_project_no, g.die_descriptions,
             ROUND(SUM(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job)) / 3600, 2) AS total_hours,
             ROUND(SUM(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job)) / 86400, 2) AS job_hour
          FROM WorkingActionJob a
          INNER JOIN WorkingMaster b ON a.w_id = b.w_id
-         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no)
+         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no) AND g.dp_id = ?
          WHERE YEAR(a.wa_start_job) = ? AND a.wa_end_job IS NOT NULL AND a.e_id = ?
          GROUP BY COALESCE(a.w_project_no, b.w_project_no), g.die_descriptions
          ORDER BY total_hours DESC`,
-        [year, e_id]
+        [departmentId, year, e_id]
     );
     return toNumberHours(rows);
 }
 
 export async function GetMonthlyProjectBreakdown(year: number, month: number, e_id: number): Promise<ProjectBreakdownRow[]> {
+    const departmentId = await getEmpDepartmentId(e_id);
     const [rows] = await pool.query<(ProjectBreakdownRow & RowDataPacket)[]>(
         `SELECT COALESCE(a.w_project_no, b.w_project_no) AS w_project_no, g.die_descriptions,
             ROUND(SUM(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job)) / 3600, 2) AS total_hours,
             ROUND(SUM(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job)) / 86400, 2) AS job_hour
          FROM WorkingActionJob a
          INNER JOIN WorkingMaster b ON a.w_id = b.w_id
-         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no)
+         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no) AND g.dp_id = ?
          WHERE YEAR(a.wa_start_job) = ? AND MONTH(a.wa_start_job) = ? AND a.wa_end_job IS NOT NULL AND a.e_id = ?
          GROUP BY COALESCE(a.w_project_no, b.w_project_no), g.die_descriptions
          ORDER BY total_hours DESC`,
-        [year, month, e_id]
+        [departmentId, year, month, e_id]
     );
     return toNumberHours(rows);
 }

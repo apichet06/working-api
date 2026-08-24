@@ -9,7 +9,7 @@ import {
 import { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { ApiError, isDupError } from "../../errors/ApiError";
 import { CommonMessages } from "../../messages";
-import { getEMPNameByIds } from "../emp/emp.service";
+import { getEMPNameByIds, getEmpDepartmentId, getEmpDepartmentIdByUsercode } from "../emp/emp.service";
 
 // เติมค่า classification จาก WorkingMaster ลง WorkingActionJob ตอนปิดงาน (ครั้งเดียว)
 // COALESCE(a.field, b.field) กันไม่ให้ทับ snapshot เดิมถ้า row นี้เคยถูกปิด/snapshot ไปแล้ว
@@ -31,7 +31,8 @@ export async function ListWorkingActions(
   w_date?: string,
 ): Promise<WorkingActionsJobListDTO[]> {
   const conditions = ["b.e_usercode = ?"];
-  const params: string[] = [e_usercode];
+  const params: unknown[] = [e_usercode];
+  const departmentId = await getEmpDepartmentIdByUsercode(e_usercode);
 
   if (w_date) {
     conditions.push("DATE(a.wa_start_job) = ?");
@@ -58,10 +59,10 @@ export async function ListWorkingActions(
             INNER JOIN JobCode d ON COALESCE(a.job_id, b.job_id) = d.job_id
             INNER JOIN PartCode e ON COALESCE(a.part_id, b.part_id) = e.part_id
             LEFT JOIN Machine_code f ON f.mac_id = COALESCE(a.mac_id, b.mac_id)
-            LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no)
+            LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no) AND g.dp_id = ?
             WHERE ${conditions.join(" AND ")}
             ORDER BY a.wa_id desc`,
-    params,
+    [departmentId, ...params],
   );
 
   const empNameById = await getEMPNameByIds([
@@ -80,6 +81,7 @@ export async function ListWorkingActionsForCalendar(
   from: string,
   to: string,
 ): Promise<WorkingActionCalendarDTO[]> {
+  const departmentId = await getEmpDepartmentId(e_id);
   // b = WorkingActionJob (มี snapshot ตอนปิดงานแล้ว), a = WorkingMaster — COALESCE(b.field, a.field) เลือก snapshot ก่อนเสมอ ดูเหตุผลเดียวกับ ListWorkingActions ด้านบน
   const [rows] = await pool.query<(WorkingActionCalendarDTO & RowDataPacket)[]>(
     `SELECT b.wa_id, b.wa_start_job, b.wa_end_job, b.wa_status, b.w_id,
@@ -94,10 +96,10 @@ export async function ListWorkingActionsForCalendar(
          INNER JOIN Category_Code c ON c.cc_id = COALESCE(b.cc_id, a.cc_id)
          INNER JOIN JobCode d ON d.job_id = COALESCE(b.job_id, a.job_id)
          INNER JOIN PartCode e ON e.part_id = COALESCE(b.part_id, a.part_id)
-         LEFT JOIN DieCode f ON CAST(f.die_code AS CHAR) = COALESCE(b.w_project_no, a.w_project_no)
+         LEFT JOIN DieCode f ON CAST(f.die_code AS CHAR) = COALESCE(b.w_project_no, a.w_project_no) AND f.dp_id = ?
          WHERE b.e_id = ? AND DATE(b.wa_start_job) BETWEEN ? AND ?
          ORDER BY b.wa_id ASC`,
-    [e_id, from, to],
+    [departmentId, e_id, from, to],
   );
   return rows;
 }

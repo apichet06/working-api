@@ -74,6 +74,24 @@ export async function getDepartmentNamesByIds(
   return new Map(departments.map((d) => [d.d_id, d.d_department_en]));
 }
 
+export async function getEmpDepartmentId(
+  eId: number,
+): Promise<number | null> {
+  const [employees] = await poolEmp.query<
+    (RowDataPacket & { d_id: number | null })[]
+  >(`SELECT d_id FROM employees WHERE e_id = ? LIMIT 1`, [eId]);
+  return employees[0]?.d_id ?? null;
+}
+
+export async function getEmpDepartmentIdByUsercode(
+  usercode: string,
+): Promise<number | null> {
+  const [employees] = await poolEmp.query<
+    (RowDataPacket & { d_id: number | null })[]
+  >(`SELECT d_id FROM employees WHERE e_usercode = ? LIMIT 1`, [usercode]);
+  return employees[0]?.d_id ?? null;
+}
+
 export async function getEmpList(): Promise<EmpDTO[]> {
   const [emp] = await poolEmp.query<(RowDataPacket & EmpDTO)[]>(
     `SELECT e_id, e_usercode, e_fullname_th, d_id FROM employees WHERE e_status = 2 ORDER BY e_usercode ASC`,
