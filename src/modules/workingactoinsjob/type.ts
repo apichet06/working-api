@@ -17,6 +17,7 @@ export type WorkingActionJobDetailInput = {
   part_id: number;
   part_code: string;
   mac_id: number | null;
+  mac_code: string | null;
   w_desc: string;
   w_project_no: string;
 };

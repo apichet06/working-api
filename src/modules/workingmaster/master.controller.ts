@@ -23,7 +23,7 @@ export const ListWorkingMasterHistory = asyncHandler(async (req, res) => {
 })
 
 export const create = asyncHandler(async (req, res) => {
-    const { job_code, job_id, cc_id, w_project_no, part_id, mac_id, cc_code, part_code, w_desc } = req.body
+    const { job_code, job_id, cc_id, w_project_no, part_id, mac_id, mac_code, cc_code, part_code, w_desc } = req.body
     const e_id = Number(req.userId);
     const usercode = req.usercode;
 
@@ -38,6 +38,7 @@ export const create = asyncHandler(async (req, res) => {
         cc_id,
         part_id,
         mac_id: mac_id ?? null,
+        mac_code: mac_code ?? null,
         cc_code,
         part_code,
         w_desc,
@@ -48,7 +49,7 @@ export const create = asyncHandler(async (req, res) => {
 })
 
 export const update = asyncHandler(async (req, res) => {
-    const { job_code, job_id, cc_id, w_project_no, part_id, mac_id, cc_code, part_code, w_desc } = req.body
+    const { job_code, job_id, cc_id, w_project_no, part_id, mac_id, mac_code, cc_code, part_code, w_desc } = req.body
     const { w_id } = req.params
     const e_id = Number(req.userId);
     const usercode = req.usercode;
@@ -63,6 +64,7 @@ export const update = asyncHandler(async (req, res) => {
         cc_id,
         part_id,
         mac_id: mac_id ?? null,
+        mac_code: mac_code ?? null,
         cc_code,
         part_code,
         w_desc,

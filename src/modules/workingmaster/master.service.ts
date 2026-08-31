@@ -10,7 +10,7 @@ import { getEmpDepartmentId } from "../emp/emp.service";
 const WORKING_MASTER_SELECT = `
    SELECT a.w_id, a.e_usercode, a.job_code, a.job_id, a.cc_id, a.part_id, a.mac_id, a.cc_code, a.part_code, a.w_desc, a.e_id, a.w_date, a.end_job,
     b.wa_id, b.wa_start_job, b.wa_end_job, b.wa_status, b.user_edit, b.edit_date,a.w_project_no,c.cc_descriptions,d.job_descriptions,part_descriptions,
-    f.mac_code, f.mac_descriptions, g.die_descriptions,
+    COALESCE(a.mac_code, f.mac_code) AS mac_code, f.mac_descriptions, g.die_descriptions,
     -- ผ่านไปกี่วินาทีแล้ว คำนวณจาก MySQL server เอง (wa_start_job เทียบกับ NOW() ของตัวมันเอง)
     -- ไม่เอานาฬิกาเครื่อง client มาเทียบ กัน browser/server เวลาไม่ตรงกันแล้วนับผิด/ค้าง
     CASE WHEN b.wa_start_job IS NOT NULL AND b.wa_end_job IS NULL
@@ -55,7 +55,8 @@ export async function ListWorkingMasterHistory(e_id: number, from: string, to: s
                 COALESCE(a.cc_code, b.cc_code) AS cc_code, COALESCE(a.part_code, b.part_code) AS part_code,
                 COALESCE(a.w_desc, b.w_desc) AS w_desc, b.e_id, DATE(a.wa_start_job) AS w_date,
                 a.wa_id, a.wa_start_job, a.wa_end_job, a.wa_status, a.user_edit, a.edit_date,
-                c.cc_descriptions, d.job_descriptions, e.part_descriptions, f.mac_code, f.mac_descriptions, g.die_descriptions,
+                c.cc_descriptions, d.job_descriptions, e.part_descriptions,
+                COALESCE(a.mac_code, b.mac_code, f.mac_code) AS mac_code, f.mac_descriptions, g.die_descriptions,
                 b.end_job, NULL AS elapsed_seconds,
                 ROUND(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job) / 86400, 2) AS job_hour,
                 ROUND(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job) / 3600, 2) AS labour_hour
@@ -89,6 +90,7 @@ export async function CreateWorkingMaster(input: WorkingMaster): Promise<number>
             cc_id: input.cc_id,
             part_id: input.part_id,
             mac_id: input.mac_id,
+            mac_code: input.mac_code,
             cc_code: input.cc_code,
             part_code: input.part_code,
             w_desc: input.w_desc,
@@ -124,6 +126,7 @@ export async function UpdateWorkingMaster(w_id: number, input: WorkingMaster): P
             cc_id: input.cc_id,
             part_id: input.part_id,
             mac_id: input.mac_id,
+            mac_code: input.mac_code,
             cc_code: input.cc_code,
             part_code: input.part_code,
             w_desc: input.w_desc,

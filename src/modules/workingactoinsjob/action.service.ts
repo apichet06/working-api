@@ -22,6 +22,7 @@ export const SNAPSHOT_MASTER_ON_CLOSE_SQL = `
     a.part_id = COALESCE(a.part_id, b.part_id),
     a.part_code = COALESCE(a.part_code, b.part_code),
     a.mac_id = COALESCE(a.mac_id, b.mac_id),
+    a.mac_code = COALESCE(a.mac_code, b.mac_code),
     a.w_desc = COALESCE(a.w_desc, b.w_desc),
     a.w_project_no = COALESCE(a.w_project_no, b.w_project_no)
 `;
@@ -51,7 +52,7 @@ export async function ListWorkingActions(
             CONCAT(DATE_FORMAT(a.wa_start_job, '%H:%i'),'-',DATE_FORMAT(a.wa_end_job, '%H:%i')) as working_time,
             ROUND(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job) / 86400,2) AS job_hour,
             ROUND(TIMESTAMPDIFF( SECOND,a.wa_start_job,a.wa_end_job) / 3600,2) AS labour_hour,
-            CONCAT(f.mac_code,'-',f.mac_descriptions) AS mac_desc,
+            CONCAT(COALESCE(a.mac_code, b.mac_code, f.mac_code),'-',f.mac_descriptions) AS mac_desc,
             CONCAT(g.die_code,'-',g.die_descriptions) AS die_desc
             FROM WorkingActionJob a
             INNER JOIN WorkingMaster b  ON a.w_id = b.w_id
@@ -257,6 +258,7 @@ export async function UpdateWorkingActionJobDetail(
       part_id: input.part_id,
       part_code: input.part_code,
       mac_id: input.mac_id,
+      mac_code: input.mac_code,
       w_desc: input.w_desc,
       w_project_no: input.w_project_no,
       user_edit,
