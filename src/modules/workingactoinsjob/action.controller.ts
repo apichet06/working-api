@@ -27,6 +27,24 @@ export const create = asyncHandler(async (req, res) => {
     res.status(201).json({ data });
 })
 
+export const createManual = asyncHandler(async (req, res) => {
+    const e_id = Number(req.userId);
+    const { w_id, wa_start_job, wa_end_job } = req.body;
+
+    if (!w_id || !wa_start_job || !wa_end_job) {
+        throw new ApiError(400, "w_id, wa_start_job และ wa_end_job จำเป็นต้องระบุ");
+    }
+
+    const start = new Date(wa_start_job);
+    const end = new Date(wa_end_job);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+        throw new ApiError(400, "รูปแบบเวลาไม่ถูกต้อง");
+    }
+
+    const data = await WorkingActionsJob.CreateWorkingActionsJobManual(e_id, Number(w_id), start, end)
+    res.status(201).json({ data });
+})
+
 export const UpdateWAJobAutoSystem = asyncHandler(async (req, res) => {
     const data = await WorkingActionsJob.UpdateWorkingActionsJobAutoSystem()
     res.status(200).json({ data });

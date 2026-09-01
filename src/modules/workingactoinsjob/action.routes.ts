@@ -12,6 +12,7 @@ action.use(Auth);
 action.get("/list", controller.list)
 action.get("/", controller.listForCalendar)
 action.post("/", controller.create)
+action.post("/manual", controller.createManual)
 action.put("/:wa_id", controller.UpdateWActionsJob)
 action.put("/:wa_id/admin", controller.UpdateWActionsJobByAdmin)
 action.put("/:wa_id/detail", controller.UpdateWActionsJobDetail)

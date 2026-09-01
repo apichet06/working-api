@@ -140,6 +140,80 @@ export async function CreateWorkingActionsJob(
   }
 }
 
+function formatTimeRange(start: Date, end: Date | null): string {
+  const fmt = (d: Date) =>
+    `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${fmt(start)}-${end ? fmt(end) : "กำลังทำงาน"}`;
+}
+
+// พนักงานระบุเวลาเริ่ม/จบงานเอง (ต่างจาก CreateWorkingActionsJob ที่ใช้ NOW() เสมอ) ใช้กับแผนกที่งานเป็นรอบสั้นๆ
+// รู้เวลาที่แน่นอนอยู่แล้วตอนกรอก (เช่น ประชุม) ไม่เหมาะกับ flow เริ่มงาน/หยุดชั่วคราวแบบจับเวลาสด
+// บันทึกแบบเปิด+ปิดพร้อมกันในทีเดียว (ไม่ auto ปิดงานค้างเหมือน CreateWorkingActionsJob) เพราะถ้ามีงานทับซ้อนอยู่จริง
+// ต้องแจ้งเตือนให้พนักงานรู้ตัว ไม่ใช่ปิดทับให้เงียบๆ
+export async function CreateWorkingActionsJobManual(
+  e_id: number,
+  w_id: number,
+  wa_start_job: Date,
+  wa_end_job: Date,
+): Promise<number> {
+  if (!(wa_start_job.getTime() < wa_end_job.getTime())) {
+    throw new ApiError(400, "เวลาเริ่มต้องอยู่ก่อนเวลาจบ");
+  }
+  if (wa_end_job.getTime() > Date.now()) {
+    throw new ApiError(400, "เวลาหยุดต้องไม่เกินเวลาปัจจุบัน");
+  }
+
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    // งานอื่นของพนักงานคนเดียวกันที่เวลาทับซ้อนกับช่วงที่กำลังจะบันทึก (รวมงานที่ยังเปิดค้างอยู่ - wa_end_job IS NULL)
+    const [conflicts] = await conn.query<(RowDataPacket & {
+      wa_start_job: Date;
+      wa_end_job: Date | null;
+      job_code: string;
+    })[]>(
+      `SELECT a.wa_start_job, a.wa_end_job, COALESCE(a.job_code, b.job_code) AS job_code
+       FROM WorkingActionJob a
+       INNER JOIN WorkingMaster b ON b.w_id = a.w_id
+       WHERE a.e_id = ? AND a.wa_start_job < ? AND (a.wa_end_job IS NULL OR a.wa_end_job > ?)
+       ORDER BY a.wa_start_job ASC
+       LIMIT 1`,
+      [e_id, wa_end_job, wa_start_job],
+    );
+
+    if (conflicts.length > 0) {
+      const conflict = conflicts[0];
+      throw new ApiError(
+        409,
+        `เวลาทับซ้อนกับงาน "${conflict.job_code}" (${formatTimeRange(conflict.wa_start_job, conflict.wa_end_job)})`,
+      );
+    }
+
+    const [inserted] = await conn.query<ResultSetHeader>(
+      "INSERT INTO WorkingActionJob(wa_start_job,e_id,w_id) VALUES (?, ?, ?)",
+      [wa_start_job, e_id, w_id],
+    );
+
+    await conn.query<ResultSetHeader>(
+      `UPDATE WorkingActionJob a
+       INNER JOIN WorkingMaster b ON b.w_id = a.w_id
+       SET a.wa_status = ?, a.wa_end_job = ?, ${SNAPSHOT_MASTER_ON_CLOSE_SQL}
+       WHERE a.wa_id = ?`,
+      ["ผู้ใช้ระบุเวลาเอง", wa_end_job, inserted.insertId],
+    );
+
+    await conn.commit();
+    return inserted.insertId;
+  } catch (err) {
+    await conn.rollback();
+    if (isDupError(err)) throw new ApiError(409, CommonMessages.error);
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
 // ระบบปิดงานอัตโนมัติเมื่อถึงเวลาที่กำหนด เช่น 11:45, 16:40, 00:00 (เผื่อพนักงาน OT) เส้น api นี้จะถูกเรียกจาก Task Scheduler ของระบบ เพื่อปิดงานอัตโนมัติ
 export async function UpdateWorkingActionsJobAutoSystem(): Promise<number> {
   const conn = await pool.getConnection();
