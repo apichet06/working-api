@@ -92,6 +92,49 @@ export async function getEmpDepartmentIdByUsercode(
   return employees[0]?.d_id ?? null;
 }
 
+export async function getEmpIdsByDepartmentId(dId: number): Promise<number[]> {
+  const [employees] = await poolEmp.query<(RowDataPacket & { e_id: number })[]>(
+    `SELECT e_id FROM employees WHERE d_id = ? AND e_status = 2 ORDER BY e_id ASC`,
+    [dId],
+  );
+  return employees.map((employee) => employee.e_id);
+}
+
+export type EmpTemplateExportInfo = {
+  firstName: string;
+  wpNameEn: string | null;
+};
+
+export async function getEmpTemplateExportInfoByIds(
+  eIds: number[],
+): Promise<Map<number, EmpTemplateExportInfo>> {
+  if (eIds.length === 0) return new Map();
+
+  const [employees] = await poolEmp.query<
+    (RowDataPacket & {
+      e_id: number;
+      e_firstname_th: string;
+      wp_name_en: string | null;
+    })[]
+  >(
+    `SELECT a.e_id, a.e_firstname_th, b.wp_name_en
+       FROM employees a
+       LEFT JOIN workplace b ON a.wp_id = b.wp_id
+       WHERE a.e_id IN (?)`,
+    [eIds],
+  );
+
+  return new Map(
+    employees.map((employee) => [
+      employee.e_id,
+      {
+        firstName: employee.e_firstname_th,
+        wpNameEn: employee.wp_name_en,
+      },
+    ]),
+  );
+}
+
 export async function getEmpList(): Promise<EmpDTO[]> {
   const [emp] = await poolEmp.query<(RowDataPacket & EmpDTO)[]>(
     `SELECT e_id, e_usercode, e_fullname_th, d_id FROM employees WHERE e_status = 2 ORDER BY e_usercode ASC`,

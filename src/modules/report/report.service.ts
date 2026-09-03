@@ -1,7 +1,13 @@
 import { RowDataPacket } from "mysql2";
-import { WorkingReportDTO } from "./type";
+import { ReportMasterCodeDTO, WorkingReportDTO, WorkingReportTemplateDTO, WorkingReportTemplateRowDTO } from "./type";
 import { pool } from "../../db/pool";
-import { getEmpNameAndPlantByIds } from "../emp/emp.service";
+import {
+  getEmpIdsByDepartmentId,
+  getEmpNameAndPlantByIds,
+  getEmpTemplateExportInfoByIds,
+} from "../emp/emp.service";
+
+const TEMPLATE_DEPARTMENT_ID = 4;
 
 export const GetListWorkingReport = async (
   e_ids: number[] | null,
@@ -58,4 +64,90 @@ export const GetListWorkingReport = async (
       wp_name_en: empInfo?.wp_name_en ?? null,
     };
   });
+};
+
+export const GetWorkingReportTemplate = async (
+  requestedEmployeeIds: number[] | null,
+  startDate: string,
+  endDate: string,
+): Promise<WorkingReportTemplateDTO> => {
+  const departmentEmployeeIds = await getEmpIdsByDepartmentId(TEMPLATE_DEPARTMENT_ID);
+  const departmentEmployeeIdSet = new Set(departmentEmployeeIds);
+  const employeeIds = requestedEmployeeIds
+    ? [...new Set(requestedEmployeeIds)].filter((id) => departmentEmployeeIdSet.has(id))
+    : departmentEmployeeIds;
+
+  const codeQueries = await Promise.all([
+    pool.query<(ReportMasterCodeDTO & RowDataPacket)[]>(
+      `SELECT CAST(job_code AS CHAR) AS code, job_descriptions AS description
+         FROM JobCode WHERE dp_id = ? ORDER BY job_code ASC`,
+      [TEMPLATE_DEPARTMENT_ID],
+    ),
+    pool.query<(ReportMasterCodeDTO & RowDataPacket)[]>(
+      `SELECT CAST(die_code AS CHAR) AS code, die_descriptions AS description
+         FROM DieCode WHERE dp_id = ? ORDER BY die_code ASC`,
+      [TEMPLATE_DEPARTMENT_ID],
+    ),
+    pool.query<(ReportMasterCodeDTO & RowDataPacket)[]>(
+      `SELECT CAST(cc_code AS CHAR) AS code, cc_descriptions AS description
+         FROM Category_Code WHERE dp_id = ? ORDER BY cc_code ASC`,
+      [TEMPLATE_DEPARTMENT_ID],
+    ),
+    pool.query<(ReportMasterCodeDTO & RowDataPacket)[]>(
+      `SELECT CAST(part_code AS CHAR) AS code, part_descriptions AS description
+         FROM PartCode WHERE dp_id = ? ORDER BY part_code ASC`,
+      [TEMPLATE_DEPARTMENT_ID],
+    ),
+  ]);
+
+  let rows: WorkingReportTemplateRowDTO[] = [];
+  if (employeeIds.length > 0) {
+    const [rawRows] = await pool.query<
+      (Omit<WorkingReportTemplateRowDTO, "e_firstname_th" | "wp_name_en"> & RowDataPacket)[]
+    >(
+      `SELECT a.wa_id, a.e_id, b.e_usercode,
+              DATE_FORMAT(a.wa_start_job, '%Y-%m-%d') AS working_date,
+              DATE_FORMAT(a.wa_start_job, '%Y-%m-%d %H:%i:%s') AS wa_start_job,
+              DATE_FORMAT(a.wa_end_job, '%Y-%m-%d %H:%i:%s') AS wa_end_job,
+              CAST(COALESCE(a.job_code, b.job_code, d.job_code) AS CHAR) AS job_code,
+              CAST(COALESCE(a.mac_code, b.mac_code, f.mac_code) AS CHAR) AS mac_code,
+              CAST(COALESCE(a.w_project_no, b.w_project_no) AS CHAR) AS w_project_no,
+              CAST(COALESCE(a.cc_code, b.cc_code, c.cc_code) AS CHAR) AS cc_code,
+              CAST(COALESCE(a.part_code, b.part_code, e.part_code) AS CHAR) AS part_code,
+              COALESCE(a.w_desc, b.w_desc) AS w_desc
+         FROM WorkingActionJob a
+         INNER JOIN WorkingMaster b ON a.w_id = b.w_id
+         INNER JOIN Category_Code c ON COALESCE(a.cc_id, b.cc_id) = c.cc_id
+         INNER JOIN JobCode d ON COALESCE(a.job_id, b.job_id) = d.job_id
+         INNER JOIN PartCode e ON COALESCE(a.part_id, b.part_id) = e.part_id
+         LEFT JOIN Machine_code f ON f.mac_id = COALESCE(a.mac_id, b.mac_id)
+         WHERE a.e_id IN (?)
+           AND DATE(a.wa_start_job) BETWEEN ? AND ?
+           AND a.wa_end_job IS NOT NULL
+         ORDER BY a.wa_start_job ASC, b.e_usercode ASC, a.wa_id ASC`,
+      [employeeIds, startDate, endDate],
+    );
+
+    const employeeInfoById = await getEmpTemplateExportInfoByIds([
+      ...new Set(rawRows.map((row) => row.e_id)),
+    ]);
+    rows = rawRows.map((row) => {
+      const employee = employeeInfoById.get(row.e_id);
+      return {
+        ...row,
+        e_firstname_th: employee?.firstName ?? null,
+        wp_name_en: employee?.wpNameEn ?? null,
+      };
+    });
+  }
+
+  return {
+    rows,
+    codes: {
+      jobs: codeQueries[0][0],
+      dies: codeQueries[1][0],
+      categories: codeQueries[2][0],
+      parts: codeQueries[3][0],
+    },
+  };
 };
