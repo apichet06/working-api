@@ -159,14 +159,18 @@ export async function CreateWorkingActionsJobManual(
   const toLocalDateKey = (date: Date) =>
     `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
   const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
   const startDateKey = toLocalDateKey(wa_start_job);
   const endDateKey = toLocalDateKey(wa_end_job);
-  const allowedDateKeys = new Set([toLocalDateKey(today), toLocalDateKey(yesterday)]);
+  const allowedDateKeys = new Set(
+    Array.from({ length: 7 }, (_, daysAgo) => {
+      const allowedDate = new Date(today);
+      allowedDate.setDate(allowedDate.getDate() - daysAgo);
+      return toLocalDateKey(allowedDate);
+    }),
+  );
 
   if (startDateKey !== endDateKey || !allowedDateKeys.has(startDateKey)) {
-    throw new ApiError(400, "วันที่ทำงานต้องเป็นวันนี้หรือเมื่อวาน และเวลาเริ่ม/หยุดต้องอยู่ในวันเดียวกัน");
+    throw new ApiError(400, "วันที่ทำงานต้องอยู่ภายใน 7 วันย้อนหลังรวมวันปัจจุบัน และเวลาเริ่ม/หยุดต้องอยู่ในวันเดียวกัน");
   }
   if (!(wa_start_job.getTime() < wa_end_job.getTime())) {
     throw new ApiError(400, "เวลาเริ่มต้องอยู่ก่อนเวลาจบ");
