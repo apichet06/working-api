@@ -18,6 +18,7 @@ import dashboard from "./modules/dashboard/dashboard.routes";
 import report from "./modules/report/report.routes";
 import docterProjectCode from "./modules/docter-project-code/docker-project-code.routes";
 import detailmaster from "./modules/detailmaster/detailmaster.routes";
+import projectMonitor from "./modules/project-monitor/project-monitor.routes";
 
 export function createApp() {
   const app = express();
@@ -41,6 +42,7 @@ export function createApp() {
   app.use("/api/report", report);
   app.use("/api/docter-project-code", docterProjectCode);
   app.use("/api/detailmaster", detailmaster);
+  app.use("/api/project-monitor", projectMonitor);
 
   app.get("/", (_req, res) => {
     res.status(200).send("Arcana API is running");
