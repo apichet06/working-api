@@ -8,12 +8,16 @@ import {
 } from "../../errors/ApiError";
 import { CommonMessages } from "../../messages";
 import { getDepartmentNamesByIds, getEMPNameByIds } from "../emp/emp.service";
+import { getWorkplaceNamesByIds } from "../workplace/workplace.service";
 
-export async function ListCategory(): Promise<CategoryDTO[]> {
+export async function ListCategory(workplaceId?: number): Promise<CategoryDTO[]> {
+  const where = workplaceId === undefined ? "" : "WHERE wp_id = ?";
   const [rows] = await pool.query<(RowDataPacket & CategoryDTO)[]>(
-    `SELECT cc_id, CAST(cc_code AS CHAR) AS cc_code, cc_descriptions, dp_id, add_date, e_id
+    `SELECT cc_id, CAST(cc_code AS CHAR) AS cc_code, cc_descriptions, dp_id, wp_id, add_date, e_id
         FROM Category_Code
+        ${where}
         Order by cc_code asc`,
+    workplaceId === undefined ? [] : [workplaceId],
   );
 
   const departmentById = await getDepartmentNamesByIds([
@@ -22,10 +26,14 @@ export async function ListCategory(): Promise<CategoryDTO[]> {
   const empNameById = await getEMPNameByIds([
     ...new Set(rows.map((row) => row.e_id)),
   ]);
+  const workplaceById = await getWorkplaceNamesByIds([
+    ...new Set(rows.map((row) => row.wp_id)),
+  ]);
   return rows.map((row) => ({
     ...row,
     dp_department: departmentById.get(row.dp_id) ?? null,
     e_name: empNameById.get(row.e_id) ?? null,
+    wp_name: workplaceById.get(row.wp_id) ?? null,
   }));
 }
 
@@ -40,6 +48,7 @@ export async function CreateCategorytCode(input: Category): Promise<number> {
         cc_code: input.cc_code,
         cc_descriptions: input.cc_descriptions,
         dp_id: input.dp_id,
+        wp_id: input.wp_id,
         e_id: input.e_id,
       },
     );
@@ -57,11 +66,13 @@ export async function CreateCategorytCode(input: Category): Promise<number> {
 export async function UpdateCategoryCode(
   cc_id: number,
   input: Category,
+  scopeWorkplaceId?: number,
 ): Promise<CategoryDTO> {
   const data = {
     cc_code: input.cc_code,
     cc_descriptions: input.cc_descriptions,
     dp_id: input.dp_id,
+    wp_id: input.wp_id,
     e_id: input.e_id,
   };
 
@@ -70,8 +81,12 @@ export async function UpdateCategoryCode(
   try {
     await conn.beginTransaction();
     const [res] = await conn.query<ResultSetHeader>(
-      "Update Category_Code SET ? WHERE cc_id =?",
-      [data, cc_id],
+      scopeWorkplaceId === undefined
+        ? "UPDATE Category_Code SET ? WHERE cc_id = ?"
+        : "UPDATE Category_Code SET ? WHERE cc_id = ? AND wp_id = ?",
+      scopeWorkplaceId === undefined
+        ? [data, cc_id]
+        : [data, cc_id, scopeWorkplaceId],
     );
 
     if (res.affectedRows === 0) {
@@ -79,12 +94,14 @@ export async function UpdateCategoryCode(
     }
 
     const departmentById = await getDepartmentNamesByIds([data.dp_id]);
+    const workplaceById = await getWorkplaceNamesByIds([data.wp_id]);
     await conn.commit();
 
     return {
       cc_id: cc_id,
       ...data,
       dp_department: departmentById.get(data.dp_id) ?? null,
+      wp_name: workplaceById.get(data.wp_id) ?? null,
     };
   } catch (err) {
     await conn.rollback();
@@ -95,14 +112,16 @@ export async function UpdateCategoryCode(
   }
 }
 
-export async function DeleteCategoryCode(id: number): Promise<void> {
+export async function DeleteCategoryCode(id: number, workplaceId?: number): Promise<void> {
   const conn = await pool.getConnection();
 
   try {
     await conn.beginTransaction();
     const [res] = await conn.query<ResultSetHeader>(
-      "DELETE FROM Category_Code WHERE cc_id = ?",
-      [id],
+      workplaceId === undefined
+        ? "DELETE FROM Category_Code WHERE cc_id = ?"
+        : "DELETE FROM Category_Code WHERE cc_id = ? AND wp_id = ?",
+      workplaceId === undefined ? [id] : [id, workplaceId],
     );
 
     if (res.affectedRows === 0) {

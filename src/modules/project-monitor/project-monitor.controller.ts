@@ -8,7 +8,7 @@ export const listActiveProjects = asyncHandler(async (req, res) => {
     throw new ApiError(400, "department จำเป็นต้องระบุและต้องเป็นตัวเลขที่ถูกต้อง");
   }
 
-  const data = await projectMonitor.ListActiveProjects(departmentId);
+  const data = await projectMonitor.ListActiveProjects(departmentId, Number(req.workplaceId));
   res.status(200).json({ data });
 });
 
@@ -18,11 +18,11 @@ export const listRealtimeProjects = asyncHandler(async (req, res) => {
     throw new ApiError(400, "department จำเป็นต้องระบุและต้องเป็นตัวเลขที่ถูกต้อง");
   }
 
-  const data = await projectMonitor.ListRealtimeProjects(departmentId);
+  const data = await projectMonitor.ListRealtimeProjects(departmentId, Number(req.workplaceId));
   res.status(200).json({ data });
 });
 
-export const listMonitorDepartments = asyncHandler(async (_req, res) => {
-  const data = await projectMonitor.ListMonitorDepartmentIds();
+export const listMonitorDepartments = asyncHandler(async (req, res) => {
+  const data = await projectMonitor.ListMonitorDepartmentIds(Number(req.workplaceId));
   res.status(200).json({ data });
 });

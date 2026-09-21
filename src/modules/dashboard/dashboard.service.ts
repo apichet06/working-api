@@ -23,13 +23,16 @@ export async function GetYearlySummary(year: number, e_id: number): Promise<Year
 }
 
 // จำนวนงาน (แถว) ของทุกพนักงานในปีนั้นๆ ใช้ตัดสินใจว่า dropdown เลือกพนักงาน/แผนกไหน disable ได้ (ไม่มีงานเลย)
-export async function GetEmployeeJobCounts(year: number): Promise<EmployeeJobCountRow[]> {
+export async function GetEmployeeJobCounts(year: number, workplaceId: number): Promise<EmployeeJobCountRow[]> {
     const [rows] = await pool.query<(EmployeeJobCountRow & RowDataPacket)[]>(
-        `SELECT e_id, COUNT(*) AS job_count
-         FROM WorkingActionJob
-         WHERE YEAR(wa_start_job) = ? AND wa_end_job IS NOT NULL
-         GROUP BY e_id`,
-        [year]
+        `SELECT a.e_id, COUNT(*) AS job_count
+         FROM WorkingActionJob a
+         INNER JOIN WorkingMaster b ON b.w_id = a.w_id
+         WHERE YEAR(a.wa_start_job) = ?
+           AND a.wa_end_job IS NOT NULL
+           AND COALESCE(a.wp_id, b.wp_id) = ?
+         GROUP BY a.e_id`,
+        [year, workplaceId]
     );
     return rows;
 }
@@ -84,7 +87,7 @@ export async function GetMonthlyJobBreakdown(year: number, month: number, e_id: 
 // สรุปเวลาที่ใช้ แยกตามเลขที่โปรเจกต์ (w_project_no) เพื่อดูว่าเวลาไปลงกับโปรเจกต์ไหนเยอะสุด
 // LEFT JOIN DieCode เผื่อ w_project_no ตรงกับ die_code (ไม่ใช่ทุกโปรเจกต์จะเป็นดาย บางอันเป็น free text) จะได้ die_descriptions มาโชว์เป็นชื่ออ่านรู้เรื่องแทนรหัสเปล่าๆ
 // (pattern เดียวกับที่ใช้ใน master.service.ts / action.service.ts — ต้อง CAST เป็น CHAR กัน collation ชนกัน)
-export async function GetYearlyProjectBreakdown(year: number, e_id: number): Promise<ProjectBreakdownRow[]> {
+export async function GetYearlyProjectBreakdown(year: number, e_id: number, workplaceId: number): Promise<ProjectBreakdownRow[]> {
     const departmentId = await getEmpDepartmentId(e_id);
     const [rows] = await pool.query<(ProjectBreakdownRow & RowDataPacket)[]>(
         `SELECT COALESCE(a.w_project_no, b.w_project_no) AS w_project_no, g.die_descriptions,
@@ -92,16 +95,16 @@ export async function GetYearlyProjectBreakdown(year: number, e_id: number): Pro
             ROUND(SUM(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job)) / 86400, 2) AS job_hour
          FROM WorkingActionJob a
          INNER JOIN WorkingMaster b ON a.w_id = b.w_id
-         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no) AND g.dp_id = ?
+         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no) AND g.dp_id = ? AND g.wp_id = ?
          WHERE YEAR(a.wa_start_job) = ? AND a.wa_end_job IS NOT NULL AND a.e_id = ?
          GROUP BY COALESCE(a.w_project_no, b.w_project_no), g.die_descriptions
          ORDER BY total_hours DESC`,
-        [departmentId, year, e_id]
+        [departmentId, workplaceId, year, e_id]
     );
     return toNumberHours(rows);
 }
 
-export async function GetMonthlyProjectBreakdown(year: number, month: number, e_id: number): Promise<ProjectBreakdownRow[]> {
+export async function GetMonthlyProjectBreakdown(year: number, month: number, e_id: number, workplaceId: number): Promise<ProjectBreakdownRow[]> {
     const departmentId = await getEmpDepartmentId(e_id);
     const [rows] = await pool.query<(ProjectBreakdownRow & RowDataPacket)[]>(
         `SELECT COALESCE(a.w_project_no, b.w_project_no) AS w_project_no, g.die_descriptions,
@@ -109,11 +112,11 @@ export async function GetMonthlyProjectBreakdown(year: number, month: number, e_
             ROUND(SUM(TIMESTAMPDIFF(SECOND, a.wa_start_job, a.wa_end_job)) / 86400, 2) AS job_hour
          FROM WorkingActionJob a
          INNER JOIN WorkingMaster b ON a.w_id = b.w_id
-         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no) AND g.dp_id = ?
+         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no) AND g.dp_id = ? AND g.wp_id = ?
          WHERE YEAR(a.wa_start_job) = ? AND MONTH(a.wa_start_job) = ? AND a.wa_end_job IS NOT NULL AND a.e_id = ?
          GROUP BY COALESCE(a.w_project_no, b.w_project_no), g.die_descriptions
          ORDER BY total_hours DESC`,
-        [departmentId, year, month, e_id]
+        [departmentId, workplaceId, year, month, e_id]
     );
     return toNumberHours(rows);
 }

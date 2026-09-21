@@ -33,6 +33,7 @@ export type WorkingActionsDTO = {
 // ต่างจาก WorkingMasterDTO ที่ join เอาแค่ action ล่าสุดของแต่ละ w_id
 export type WorkingActionCalendarDTO = {
   wa_id: number;
+  wp_id: number | null;
   wa_start_job: Date;
   wa_end_job: Date | null;
   wa_status: string | null;
@@ -45,10 +46,12 @@ export type WorkingActionCalendarDTO = {
   cc_descriptions: string;
   job_descriptions: string;
   part_descriptions: string;
+  die_descriptions: string | null;
 };
 
 export type WorkingActionsJobListDTO = {
   wa_id: number;
+  wp_id: number | null;
   wa_start_job: Date;
   wa_end_job: Date | null;
   wa_status: string | null;

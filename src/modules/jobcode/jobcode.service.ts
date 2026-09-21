@@ -8,12 +8,19 @@ import {
 } from "../../errors/ApiError";
 import { CommonMessages } from "../../messages";
 import { getDepartmentNamesByIds, getEMPNameByIds } from "../emp/emp.service";
+import {
+  getWorkplace,
+  getWorkplaceNamesByIds,
+} from "../workplace/workplace.service";
 
-export async function ListJobCode(): Promise<JobCodeDTO[]> {
+export async function ListJobCode(workplaceId?: number): Promise<JobCodeDTO[]> {
+  const where = workplaceId === undefined ? "" : "WHERE wp_id = ?";
   const [rows] = await pool.query<(RowDataPacket & JobCodeDTO)[]>(
-    `SELECT job_id, CAST(job_code AS CHAR) AS job_code, job_descriptions, dp_id, add_date, e_id
+    `SELECT job_id, CAST(job_code AS CHAR) AS job_code, job_descriptions, dp_id, add_date, e_id,wp_id
         FROM JobCode
+        ${where}
         Order by job_code asc`,
+    workplaceId === undefined ? [] : [workplaceId],
   );
 
   const departmentById = await getDepartmentNamesByIds([
@@ -22,11 +29,15 @@ export async function ListJobCode(): Promise<JobCodeDTO[]> {
   const empNameById = await getEMPNameByIds([
     ...new Set(rows.map((row) => row.e_id)),
   ]);
+  const workplaceById = await getWorkplaceNamesByIds([
+    ...new Set(rows.map((row) => row.wp_id)),
+  ]);
 
   return rows.map((row) => ({
     ...row,
     dp_department: departmentById.get(row.dp_id) ?? null,
     e_name: empNameById.get(row.e_id) ?? null,
+    wp_name: workplaceById.get(row.wp_id) ?? null,
   }));
 }
 
@@ -40,6 +51,7 @@ export async function CreateJobCode(input: JobCode): Promise<number> {
       {
         job_code: input.job_code,
         dp_id: input.dp_id,
+        wp_id: input.wp_id,
         job_descriptions: input.job_descriptions,
         e_id: input.e_id,
       },
@@ -58,11 +70,13 @@ export async function CreateJobCode(input: JobCode): Promise<number> {
 export async function UpdateJobCode(
   job_id: number,
   input: JobCode,
+  scopeWorkplaceId?: number,
 ): Promise<JobCodeDTO> {
   const data = {
     job_code: input.job_code,
     dp_id: input.dp_id,
     job_descriptions: input.job_descriptions,
+    wp_id: input.wp_id,
     e_id: input.e_id,
   };
 
@@ -71,8 +85,12 @@ export async function UpdateJobCode(
   try {
     await conn.beginTransaction();
     const [res] = await conn.query<ResultSetHeader>(
-      "Update JobCode SET ? WHERE job_id =?",
-      [data, job_id],
+      scopeWorkplaceId === undefined
+        ? "UPDATE JobCode SET ? WHERE job_id = ?"
+        : "UPDATE JobCode SET ? WHERE job_id = ? AND wp_id = ?",
+      scopeWorkplaceId === undefined
+        ? [data, job_id]
+        : [data, job_id, scopeWorkplaceId],
     );
 
     if (res.affectedRows === 0) {
@@ -95,14 +113,16 @@ export async function UpdateJobCode(
   }
 }
 
-export async function DeleteJobCode(id: number): Promise<void> {
+export async function DeleteJobCode(id: number, workplaceId?: number): Promise<void> {
   const conn = await pool.getConnection();
 
   try {
     await conn.beginTransaction();
     const [res] = await conn.query<ResultSetHeader>(
-      "DELETE FROM JobCode WHERE job_id = ?",
-      [id],
+      workplaceId === undefined
+        ? "DELETE FROM JobCode WHERE job_id = ?"
+        : "DELETE FROM JobCode WHERE job_id = ? AND wp_id = ?",
+      workplaceId === undefined ? [id] : [id, workplaceId],
     );
 
     if (res.affectedRows === 0) {

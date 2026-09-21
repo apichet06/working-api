@@ -77,12 +77,12 @@ export const update = asyncHandler(async (req, res) => {
 
 export const endJob = asyncHandler(async (req, res) => {
     const { w_id } = req.params
-    await WorkingMaster.EndWorkingMaster(Number(w_id))
+    await WorkingMaster.EndWorkingMaster(Number(w_id), Number(req.userId), Number(req.workplaceId))
     res.status(200).json({ message: CommonMessages.updateSuccess })
 })
 
 export const remove = asyncHandler(async (req, res) => {
     const { w_id } = req.params
-    await WorkingMaster.DeleteWorkingMaster(Number(w_id))
+    await WorkingMaster.DeleteWorkingMaster(Number(w_id), Number(req.userId), Number(req.workplaceId))
     res.json({ message: CommonMessages.deleteSuccess })
 })

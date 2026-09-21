@@ -15,6 +15,7 @@ export type WorkingMaster = {
 
 export type WorkingMasterDTO = {
     w_id: number
+    wp_id: number | null,
     e_usercode: string,
     job_code: string,
     job_id: number,

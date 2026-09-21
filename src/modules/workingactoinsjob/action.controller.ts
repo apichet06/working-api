@@ -1,10 +1,12 @@
 import { asyncHandler } from "../../health/asyncHandler"
 import { ApiError } from "../../errors/ApiError"
 import * as WorkingActionsJob from "./action.service"
+import { hasAllBranchesAccess } from "../../constants/access"
 
 export const list = asyncHandler(async (req, res) => {
     const { e_usercode, w_date } = req.query;
-    const data = await WorkingActionsJob.ListWorkingActions(e_usercode as string, w_date as string | undefined)
+    const workplaceId = hasAllBranchesAccess(Number(req.userId)) ? undefined : Number(req.workplaceId);
+    const data = await WorkingActionsJob.ListWorkingActions(e_usercode as string, workplaceId, w_date as string | undefined)
     res.status(200).json({ data });
 })
 
@@ -53,7 +55,7 @@ export const UpdateWAJobAutoSystem = asyncHandler(async (req, res) => {
 
 export const UpdateWActionsJob = asyncHandler(async (req, res) => {
     const { wa_id } = req.params;
-    const data = await WorkingActionsJob.UpdateWorkingActionsJob(Number(wa_id))
+    const data = await WorkingActionsJob.UpdateWorkingActionsJob(Number(wa_id), Number(req.userId), Number(req.workplaceId))
     res.status(200).json({ data });
 })
 
@@ -61,7 +63,8 @@ export const UpdateWActionsJobByAdmin = asyncHandler(async (req, res) => {
     const { wa_id } = req.params;
     const { wa_start_job, wa_end_job, e_id, w_id, edit_date, mark_status } = req.body;
     const user_edit = Number(req.userId);
-    const data = await WorkingActionsJob.UpdateWorkingActionsJobByAdmin(Number(wa_id), { wa_start_job, wa_end_job, e_id, w_id, user_edit, edit_date, mark_status });
+    const workplaceId = hasAllBranchesAccess(user_edit) ? undefined : Number(req.workplaceId);
+    const data = await WorkingActionsJob.UpdateWorkingActionsJobByAdmin(Number(wa_id), { wa_start_job, wa_end_job, e_id, w_id, user_edit, edit_date, mark_status }, workplaceId);
     res.status(200).json({ data });
 })
 
@@ -74,6 +77,7 @@ export const UpdateWActionsJobDetail = asyncHandler(async (req, res) => {
         Number(wa_id),
         { job_id, job_code, cc_id, cc_code, part_id, part_code, mac_id: mac_id ?? null, mac_code: mac_code ?? null, w_desc, w_project_no },
         user_edit,
+        Number(req.workplaceId),
     );
     res.status(200).json({ data });
 })

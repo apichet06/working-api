@@ -17,7 +17,7 @@ export const list = asyncHandler(async (req, res) => {
         if (eIds.length === 0) eIds = null;
     }
 
-    const data = await ReportService.GetListWorkingReport(eIds, startDate, endDate);
+    const data = await ReportService.GetListWorkingReport(eIds, startDate, endDate, Number(req.workplaceId));
     res.status(200).json({ data })
 })
 
@@ -39,6 +39,6 @@ export const template = asyncHandler(async (req, res) => {
         if (eIds.length === 0) eIds = null;
     }
 
-    const data = await ReportService.GetWorkingReportTemplate(eIds, startDate, endDate);
+    const data = await ReportService.GetWorkingReportTemplate(eIds, startDate, endDate, Number(req.workplaceId));
     res.status(200).json({ data });
 });

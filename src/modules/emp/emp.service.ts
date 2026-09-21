@@ -83,6 +83,26 @@ export async function getEmpDepartmentId(
   return employees[0]?.d_id ?? null;
 }
 
+export async function getEmpWorkplaceId(
+  eId: number,
+): Promise<number | null> {
+  const [employees] = await poolEmp.query<
+    (RowDataPacket & { wp_id: number | null })[]
+  >(`SELECT wp_id FROM employees WHERE e_id = ? LIMIT 1`, [eId]);
+  return employees[0]?.wp_id ?? null;
+}
+
+export async function employeeBelongsToWorkplace(
+  eId: number,
+  workplaceId: number,
+): Promise<boolean> {
+  const [employees] = await poolEmp.query<RowDataPacket[]>(
+    `SELECT 1 FROM employees WHERE e_id = ? AND wp_id = ? LIMIT 1`,
+    [eId, workplaceId],
+  );
+  return employees.length > 0;
+}
+
 export async function getEmpDepartmentIdByUsercode(
   usercode: string,
 ): Promise<number | null> {
@@ -92,10 +112,12 @@ export async function getEmpDepartmentIdByUsercode(
   return employees[0]?.d_id ?? null;
 }
 
-export async function getEmpIdsByDepartmentId(dId: number): Promise<number[]> {
+export async function getEmpIdsByDepartmentId(dId: number, workplaceId: number): Promise<number[]> {
   const [employees] = await poolEmp.query<(RowDataPacket & { e_id: number })[]>(
-    `SELECT e_id FROM employees WHERE d_id = ? AND e_status = 2 ORDER BY e_id ASC`,
-    [dId],
+    `SELECT e_id FROM employees
+       WHERE d_id = ? AND wp_id = ? AND e_status = 2
+       ORDER BY e_id ASC`,
+    [dId, workplaceId],
   );
   return employees.map((employee) => employee.e_id);
 }
@@ -135,9 +157,14 @@ export async function getEmpTemplateExportInfoByIds(
   );
 }
 
-export async function getEmpList(): Promise<EmpDTO[]> {
+export async function getEmpList(workplaceId?: number): Promise<EmpDTO[]> {
+  const workplaceCondition = workplaceId === undefined ? "" : "AND wp_id = ?";
   const [emp] = await poolEmp.query<(RowDataPacket & EmpDTO)[]>(
-    `SELECT e_id, e_usercode, e_fullname_th, d_id FROM employees WHERE e_status = 2 ORDER BY e_usercode ASC`,
+    `SELECT e_id, e_usercode, e_fullname_th, d_id
+       FROM employees
+       WHERE e_status = 2 ${workplaceCondition}
+       ORDER BY e_usercode ASC`,
+    workplaceId === undefined ? [] : [workplaceId],
   );
   return emp;
 }

@@ -4,11 +4,11 @@ import { WorkingMaster, WorkingMasterDTO } from "./type";
 import { ApiError, isDupError, isFkConstraintError } from "../../errors/ApiError";
 import { CommonMessages } from "../../messages";
 import { SNAPSHOT_MASTER_ON_CLOSE_SQL } from "../workingactoinsjob/action.service";
-import { getEmpDepartmentId } from "../emp/emp.service";
+import { getEmpDepartmentId, getEmpWorkplaceId } from "../emp/emp.service";
 
 // join เฉพาะ WorkingActionJob แถวล่าสุดของแต่ละ w_id กัน 1 WorkingMaster ออกเป็นหลายแถว
 const WORKING_MASTER_SELECT = `
-   SELECT a.w_id, a.e_usercode, a.job_code, a.job_id, a.cc_id, a.part_id, a.mac_id, a.cc_code, a.part_code, a.w_desc, a.e_id, a.w_date, a.end_job,
+   SELECT a.w_id, a.wp_id, a.e_usercode, a.job_code, a.job_id, a.cc_id, a.part_id, a.mac_id, a.cc_code, a.part_code, a.w_desc, a.e_id, a.w_date, a.end_job,
     b.wa_id, b.wa_start_job, b.wa_end_job, b.wa_status, b.user_edit, b.edit_date,a.w_project_no,c.cc_descriptions,d.job_descriptions,part_descriptions,
     COALESCE(a.mac_code, f.mac_code) AS mac_code, f.mac_descriptions, g.die_descriptions,
     -- ผ่านไปกี่วินาทีแล้ว คำนวณจาก MySQL server เอง (wa_start_job เทียบกับ NOW() ของตัวมันเอง)
@@ -49,7 +49,7 @@ export async function ListWorkingMaster(e_id: number): Promise<WorkingMasterDTO[
 export async function ListWorkingMasterHistory(e_id: number, from: string, to: string): Promise<WorkingMasterDTO[]> {
     const departmentId = await getEmpDepartmentId(e_id);
     const [rows] = await pool.query<(WorkingMasterDTO & RowDataPacket)[]>(
-        `SELECT b.w_id, b.e_usercode, COALESCE(a.job_code, b.job_code) AS job_code, COALESCE(a.job_id, b.job_id) AS job_id,
+        `SELECT b.w_id, COALESCE(a.wp_id, b.wp_id) AS wp_id, b.e_usercode, COALESCE(a.job_code, b.job_code) AS job_code, COALESCE(a.job_id, b.job_id) AS job_id,
                 COALESCE(a.w_project_no, b.w_project_no) AS w_project_no, COALESCE(a.cc_id, b.cc_id) AS cc_id,
                 COALESCE(a.part_id, b.part_id) AS part_id, COALESCE(a.mac_id, b.mac_id) AS mac_id,
                 COALESCE(a.cc_code, b.cc_code) AS cc_code, COALESCE(a.part_code, b.part_code) AS part_code,
@@ -83,7 +83,12 @@ export async function CreateWorkingMaster(input: WorkingMaster): Promise<number>
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction()
+        const workplaceId = await getEmpWorkplaceId(input.e_id);
+        if (workplaceId === null) {
+            throw new ApiError(400, "ไม่พบข้อมูลสาขาของพนักงาน");
+        }
         const data = {
+            wp_id: workplaceId,
             e_usercode: input.e_usercode,
             job_code: input.job_code,
             job_id: input.job_id,
@@ -119,7 +124,12 @@ export async function UpdateWorkingMaster(w_id: number, input: WorkingMaster): P
     try {
         await conn.beginTransaction()
         const departmentId = await getEmpDepartmentId(input.e_id);
+        const workplaceId = await getEmpWorkplaceId(input.e_id);
+        if (workplaceId === null) {
+            throw new ApiError(400, "ไม่พบข้อมูลสาขาของพนักงาน");
+        }
         const data = {
+            wp_id: workplaceId,
             e_usercode: input.e_usercode,
             job_code: input.job_code,
             job_id: input.job_id,
@@ -134,14 +144,14 @@ export async function UpdateWorkingMaster(w_id: number, input: WorkingMaster): P
             w_project_no: input.w_project_no
         };
         const [res] = await conn.query<ResultSetHeader>(
-            "UPDATE WorkingMaster SET ? WHERE w_id = ?", [data, w_id]
+            "UPDATE WorkingMaster SET ? WHERE w_id = ? AND e_id = ? AND wp_id = ?", [data, w_id, input.e_id, workplaceId]
         );
         if (res.affectedRows === 0) {
             throw new ApiError(404, CommonMessages.notFound);
         }
 
         const [rows] = await conn.query<(WorkingMasterDTO & RowDataPacket)[]>(
-            `${WORKING_MASTER_SELECT} WHERE a.w_id = ?`, [departmentId, w_id]
+            `${WORKING_MASTER_SELECT} WHERE a.w_id = ? AND a.e_id = ? AND a.wp_id = ?`, [departmentId, w_id, input.e_id, workplaceId]
         );
 
         await conn.commit();
@@ -155,7 +165,7 @@ export async function UpdateWorkingMaster(w_id: number, input: WorkingMaster): P
         conn.release();
     }
 }
-export async function EndWorkingMaster(w_id: number): Promise<void> {
+export async function EndWorkingMaster(w_id: number, e_id: number, workplaceId: number): Promise<void> {
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction();
@@ -165,12 +175,12 @@ export async function EndWorkingMaster(w_id: number): Promise<void> {
             `UPDATE WorkingActionJob a
              INNER JOIN WorkingMaster b ON b.w_id = a.w_id
              SET a.wa_status = ?, a.wa_end_job = ?, ${SNAPSHOT_MASTER_ON_CLOSE_SQL}
-             WHERE a.w_id = ? AND a.wa_end_job IS NULL`,
-            ["ผู้ใช้จบงาน", new Date(), w_id]
+             WHERE a.w_id = ? AND a.e_id = ? AND COALESCE(a.wp_id, b.wp_id) = ? AND a.wa_end_job IS NULL`,
+            ["ผู้ใช้จบงาน", new Date(), w_id, e_id, workplaceId]
         );
 
         const [res] = await conn.query<ResultSetHeader>(
-            "UPDATE WorkingMaster SET end_job = 1 WHERE w_id = ?", [w_id]
+            "UPDATE WorkingMaster SET end_job = 1 WHERE w_id = ? AND e_id = ? AND wp_id = ?", [w_id, e_id, workplaceId]
         );
         if (res.affectedRows === 0) {
             throw new ApiError(404, CommonMessages.notFound);
@@ -185,12 +195,12 @@ export async function EndWorkingMaster(w_id: number): Promise<void> {
     }
 }
 
-export async function DeleteWorkingMaster(w_id: number): Promise<void> {
+export async function DeleteWorkingMaster(w_id: number, e_id: number, workplaceId: number): Promise<void> {
     const conn = await pool.getConnection();
     try {
         await conn.beginTransaction()
         const [res] = await conn.query<ResultSetHeader>(
-            "DELETE FROM WorkingMaster WHERE w_id = ?", [w_id]
+            "DELETE FROM WorkingMaster WHERE w_id = ? AND e_id = ? AND wp_id = ?", [w_id, e_id, workplaceId]
         );
         if (res.affectedRows === 0) {
             throw new ApiError(404, CommonMessages.notFound);

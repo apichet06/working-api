@@ -3,6 +3,7 @@ export type MachineCodeInput = {
   mac_descriptions: string;
   e_id: number;
   dp_id: number;
+  wp_id: number;
 };
 
 export type MachineCodeDTO = {
@@ -12,6 +13,8 @@ export type MachineCodeDTO = {
   add_date: string;
   e_id: number;
   dp_id: number;
+  wp_id: number;
   dp_department: string | null;
+  wp_name: string | null;
   e_name: string | null;
 };

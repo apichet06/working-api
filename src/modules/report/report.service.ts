@@ -13,12 +13,14 @@ export const GetListWorkingReport = async (
   e_ids: number[] | null,
   startDate: string,
   endDate: string,
+  workplaceId: number,
 ): Promise<WorkingReportDTO[]> => {
   const conditions = [
     "DATE(a.wa_start_job) BETWEEN ? AND ?",
     "a.wa_end_job IS NOT NULL",
+    "COALESCE(a.wp_id, b.wp_id) = ?",
   ];
-  const params: unknown[] = [startDate, endDate];
+  const params: unknown[] = [startDate, endDate, workplaceId];
 
   // ไม่ระบุ e_ids = ไม่กรองพนักงาน อ่านทุกคน
   if (e_ids && e_ids.length > 0) {
@@ -70,8 +72,9 @@ export const GetWorkingReportTemplate = async (
   requestedEmployeeIds: number[] | null,
   startDate: string,
   endDate: string,
+  workplaceId: number,
 ): Promise<WorkingReportTemplateDTO> => {
-  const departmentEmployeeIds = await getEmpIdsByDepartmentId(TEMPLATE_DEPARTMENT_ID);
+  const departmentEmployeeIds = await getEmpIdsByDepartmentId(TEMPLATE_DEPARTMENT_ID, workplaceId);
   const departmentEmployeeIdSet = new Set(departmentEmployeeIds);
   const employeeIds = requestedEmployeeIds
     ? [...new Set(requestedEmployeeIds)].filter((id) => departmentEmployeeIdSet.has(id))
@@ -80,23 +83,23 @@ export const GetWorkingReportTemplate = async (
   const codeQueries = await Promise.all([
     pool.query<(ReportMasterCodeDTO & RowDataPacket)[]>(
       `SELECT CAST(job_code AS CHAR) AS code, job_descriptions AS description
-         FROM JobCode WHERE dp_id = ? ORDER BY job_code ASC`,
-      [TEMPLATE_DEPARTMENT_ID],
+         FROM JobCode WHERE dp_id = ? AND wp_id = ? ORDER BY job_code ASC`,
+      [TEMPLATE_DEPARTMENT_ID, workplaceId],
     ),
     pool.query<(ReportMasterCodeDTO & RowDataPacket)[]>(
       `SELECT CAST(die_code AS CHAR) AS code, die_descriptions AS description
-         FROM DieCode WHERE dp_id = ? ORDER BY die_code ASC`,
-      [TEMPLATE_DEPARTMENT_ID],
+         FROM DieCode WHERE dp_id = ? AND wp_id = ? ORDER BY die_code ASC`,
+      [TEMPLATE_DEPARTMENT_ID, workplaceId],
     ),
     pool.query<(ReportMasterCodeDTO & RowDataPacket)[]>(
       `SELECT CAST(cc_code AS CHAR) AS code, cc_descriptions AS description
-         FROM Category_Code WHERE dp_id = ? ORDER BY cc_code ASC`,
-      [TEMPLATE_DEPARTMENT_ID],
+         FROM Category_Code WHERE dp_id = ? AND wp_id = ? ORDER BY cc_code ASC`,
+      [TEMPLATE_DEPARTMENT_ID, workplaceId],
     ),
     pool.query<(ReportMasterCodeDTO & RowDataPacket)[]>(
       `SELECT CAST(part_code AS CHAR) AS code, part_descriptions AS description
-         FROM PartCode WHERE dp_id = ? ORDER BY part_code ASC`,
-      [TEMPLATE_DEPARTMENT_ID],
+         FROM PartCode WHERE dp_id = ? AND wp_id = ? ORDER BY part_code ASC`,
+      [TEMPLATE_DEPARTMENT_ID, workplaceId],
     ),
   ]);
 
@@ -122,10 +125,11 @@ export const GetWorkingReportTemplate = async (
          INNER JOIN PartCode e ON COALESCE(a.part_id, b.part_id) = e.part_id
          LEFT JOIN Machine_code f ON f.mac_id = COALESCE(a.mac_id, b.mac_id)
          WHERE a.e_id IN (?)
+           AND COALESCE(a.wp_id, b.wp_id) = ?
            AND DATE(a.wa_start_job) BETWEEN ? AND ?
            AND a.wa_end_job IS NOT NULL
          ORDER BY a.wa_start_job ASC, b.e_usercode ASC, a.wa_id ASC`,
-      [employeeIds, startDate, endDate],
+      [employeeIds, workplaceId, startDate, endDate],
     );
 
     const employeeInfoById = await getEmpTemplateExportInfoByIds([

@@ -7,6 +7,7 @@ declare global {
             storeId?: number;
             userId?: number;
             usercode?: string;
+            workplaceId?: number;
         }
     }
 }

@@ -70,7 +70,7 @@ async function getEmployeesByIds(employeeIds: number[]) {
   }
 }
 
-async function getActiveActions(departmentId: number) {
+async function getActiveActions(departmentId: number, workplaceId: number) {
   const [activeActions] = await pool.query<ActiveActionRow[]>(
     `SELECT TRIM(COALESCE(a.w_project_no, b.w_project_no)) AS project_no,
             a.e_id,
@@ -88,12 +88,14 @@ async function getActiveActions(departmentId: number) {
        LEFT JOIN DieCode g
          ON CAST(g.die_code AS CHAR) = TRIM(COALESCE(a.w_project_no, b.w_project_no))
         AND g.dp_id = c.dp_id
+        AND g.wp_id = ?
        WHERE a.wa_end_job IS NULL
+         AND COALESCE(a.wp_id, b.wp_id) = ?
          AND COALESCE(a.w_project_no, b.w_project_no) IS NOT NULL
          AND TRIM(COALESCE(a.w_project_no, b.w_project_no)) <> ''
          AND c.dp_id = ?
        ORDER BY a.wa_start_job ASC`,
-    [departmentId],
+    [workplaceId, workplaceId, departmentId],
   );
   return activeActions;
 }
@@ -123,7 +125,7 @@ function buildActiveMembers(
   return membersByProject;
 }
 
-export async function ListActiveProjects(departmentId: number): Promise<ActiveProjectDTO[]> {
+export async function ListActiveProjects(departmentId: number, workplaceId: number): Promise<ActiveProjectDTO[]> {
   // สถานะ "Project ยังไม่จบ" ยึด WorkingMaster.end_job ไม่ใช่สถานะ timer ของ WorkingActionJob
   const [openMasters] = await pool.query<OpenMasterRow[]>(
     `SELECT TRIM(m.w_project_no) AS project_no, m.e_id, m.w_date AS started_at,
@@ -131,6 +133,7 @@ export async function ListActiveProjects(departmentId: number): Promise<ActivePr
        FROM WorkingMaster m
        INNER JOIN Category_Code c ON c.cc_id = m.cc_id
        WHERE m.end_job = 0
+         AND m.wp_id = ?
          AND m.w_project_no IS NOT NULL
          AND TRIM(m.w_project_no) <> ''
          AND c.dp_id = ?
@@ -140,12 +143,12 @@ export async function ListActiveProjects(departmentId: number): Promise<ActivePr
            WHERE action.w_id = m.w_id
          )
        ORDER BY m.w_date DESC, m.w_id DESC`,
-    [departmentId],
+    [workplaceId, departmentId],
   );
   if (openMasters.length === 0) return [];
 
   const activeProjectNumbers = [...new Set(openMasters.map((master) => master.project_no))];
-  const activeActions = await getActiveActions(departmentId);
+  const activeActions = await getActiveActions(departmentId, workplaceId);
   const employeesById = await getEmployeesByIds([
     ...new Set([...openMasters, ...activeActions].map((row) => row.e_id)),
   ]);
@@ -169,10 +172,12 @@ export async function ListActiveProjects(departmentId: number): Promise<ActivePr
        LEFT JOIN DieCode g
          ON CAST(g.die_code AS CHAR) = TRIM(COALESCE(a.w_project_no, b.w_project_no))
         AND g.dp_id = c.dp_id
-       WHERE c.dp_id = ?
+        AND g.wp_id = ?
+       WHERE COALESCE(a.wp_id, b.wp_id) = ?
+         AND c.dp_id = ?
          AND TRIM(COALESCE(a.w_project_no, b.w_project_no)) IN (?)
        GROUP BY TRIM(COALESCE(a.w_project_no, b.w_project_no)), a.e_id, g.die_descriptions`,
-    [departmentId, activeProjectNumbers],
+    [workplaceId, workplaceId, departmentId, activeProjectNumbers],
   );
 
   const totalByMember = new Map(
@@ -226,8 +231,8 @@ export async function ListActiveProjects(departmentId: number): Promise<ActivePr
 }
 
 // ภาพ realtime: รวมเฉพาะเวลาของรอบงานที่ยังเปิดอยู่ ณ ตอนนี้
-export async function ListRealtimeProjects(departmentId: number): Promise<ActiveProjectDTO[]> {
-  const activeActions = await getActiveActions(departmentId);
+export async function ListRealtimeProjects(departmentId: number, workplaceId: number): Promise<ActiveProjectDTO[]> {
+  const activeActions = await getActiveActions(departmentId, workplaceId);
   const employeesById = await getEmployeesByIds([
     ...new Set(activeActions.map((action) => action.e_id)),
   ]);
@@ -246,12 +251,13 @@ export async function ListRealtimeProjects(departmentId: number): Promise<Active
     .sort((a, b) => b.elapsed_seconds - a.elapsed_seconds);
 }
 
-export async function ListMonitorDepartmentIds(): Promise<number[]> {
+export async function ListMonitorDepartmentIds(workplaceId: number): Promise<number[]> {
   const [rows] = await pool.query<(RowDataPacket & { dp_id: number })[]>(
     `SELECT DISTINCT c.dp_id
        FROM WorkingMaster m
        INNER JOIN Category_Code c ON c.cc_id = m.cc_id
        WHERE m.end_job = 0
+         AND m.wp_id = ?
          AND m.w_project_no IS NOT NULL
          AND TRIM(m.w_project_no) <> ''
          AND EXISTS (
@@ -260,6 +266,7 @@ export async function ListMonitorDepartmentIds(): Promise<number[]> {
            WHERE action.w_id = m.w_id
          )
        ORDER BY c.dp_id`,
+    [workplaceId],
   );
   return rows.map((row) => Number(row.dp_id));
 }

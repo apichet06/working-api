@@ -9,12 +9,13 @@ import {
 import { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { ApiError, isDupError } from "../../errors/ApiError";
 import { CommonMessages } from "../../messages";
-import { getEMPNameByIds, getEmpDepartmentId, getEmpDepartmentIdByUsercode } from "../emp/emp.service";
+import { getEMPNameByIds, getEmpDepartmentId, getEmpDepartmentIdByUsercode, getEmpWorkplaceId } from "../emp/emp.service";
 
 // เติมค่า classification จาก WorkingMaster ลง WorkingActionJob ตอนปิดงาน (ครั้งเดียว)
 // COALESCE(a.field, b.field) กันไม่ให้ทับ snapshot เดิมถ้า row นี้เคยถูกปิด/snapshot ไปแล้ว
 // ป้องกันไม่ให้การแก้ไข WorkingMaster ภายหลัง ย้อนไปเปลี่ยนข้อมูลของรายงาน/ประวัติงานที่ปิดไปแล้ว
 export const SNAPSHOT_MASTER_ON_CLOSE_SQL = `
+    a.wp_id = COALESCE(a.wp_id, b.wp_id),
     a.job_id = COALESCE(a.job_id, b.job_id),
     a.job_code = COALESCE(a.job_code, b.job_code),
     a.cc_id = COALESCE(a.cc_id, b.cc_id),
@@ -29,10 +30,15 @@ export const SNAPSHOT_MASTER_ON_CLOSE_SQL = `
 
 export async function ListWorkingActions(
   e_usercode: string,
+  workplaceId?: number,
   w_date?: string,
 ): Promise<WorkingActionsJobListDTO[]> {
   const conditions = ["b.e_usercode = ?"];
   const params: unknown[] = [e_usercode];
+  if (workplaceId !== undefined) {
+    conditions.push("COALESCE(a.wp_id, b.wp_id) = ?");
+    params.push(workplaceId);
+  }
   const departmentId = await getEmpDepartmentIdByUsercode(e_usercode);
 
   if (w_date) {
@@ -44,7 +50,7 @@ export async function ListWorkingActions(
   // ส่วน classification (job/cc/part/mac id, w_desc, w_project_no) ใช้ COALESCE(a.field, b.field) เลือก snapshot ของ WorkingActionJob ก่อน (ถ้าปิดงานไปแล้ว)
   // แล้วค่อย fallback ไป WorkingMaster (a.field ยังไม่ถูก set = งานยังไม่ปิด หรือยังไม่ได้ backfill) กันไม่ให้แก้ WorkingMaster ทีหลังย้อนเปลี่ยนงานที่ปิดไปแล้ว
   const [rows] = await pool.query<(WorkingActionsJobListDTO & RowDataPacket)[]>(
-    `SELECT a.wa_id, a.wa_start_job, a.wa_end_job, a.wa_status, a.e_id, a.w_id, a.user_edit, a.edit_date,
+    `SELECT a.wa_id, COALESCE(a.wp_id, b.wp_id) AS wp_id, a.wa_start_job, a.wa_end_job, a.wa_status, a.e_id, a.w_id, a.user_edit, a.edit_date,
             b.e_usercode, COALESCE(a.w_project_no, b.w_project_no) AS w_project_no,
             CONCAT(d.job_code, '-', d.job_descriptions) AS job_desc,
             COALESCE(a.w_desc, b.w_desc) AS w_desc, b.w_date,
@@ -85,7 +91,7 @@ export async function ListWorkingActionsForCalendar(
   const departmentId = await getEmpDepartmentId(e_id);
   // b = WorkingActionJob (มี snapshot ตอนปิดงานแล้ว), a = WorkingMaster — COALESCE(b.field, a.field) เลือก snapshot ก่อนเสมอ ดูเหตุผลเดียวกับ ListWorkingActions ด้านบน
   const [rows] = await pool.query<(WorkingActionCalendarDTO & RowDataPacket)[]>(
-    `SELECT b.wa_id, b.wa_start_job, b.wa_end_job, b.wa_status, b.w_id,
+    `SELECT b.wa_id, COALESCE(b.wp_id, a.wp_id) AS wp_id, b.wa_start_job, b.wa_end_job, b.wa_status, b.w_id,
             COALESCE(b.job_code, a.job_code) AS job_code,
             COALESCE(b.w_desc, a.w_desc) AS w_desc,
             COALESCE(b.w_project_no, a.w_project_no) AS w_project_no,
@@ -113,6 +119,19 @@ export async function CreateWorkingActionsJob(
   try {
     await conn.beginTransaction();
 
+    const workplaceId = await getEmpWorkplaceId(e_id);
+    if (workplaceId === null) {
+      throw new ApiError(400, "ไม่พบข้อมูลสาขาของพนักงาน");
+    }
+
+    const [masters] = await conn.query<RowDataPacket[]>(
+      "SELECT 1 FROM WorkingMaster WHERE w_id = ? AND e_id = ? AND wp_id = ? LIMIT 1",
+      [w_id, e_id, workplaceId],
+    );
+    if (masters.length === 0) {
+      throw new ApiError(404, CommonMessages.notFound);
+    }
+
     const now = new Date();
 
     // ปิดงานก่อนหน้าที่ยังค้างอยู่ (ของพนักงานคนเดียวกัน) โดยอัตโนมัติ ก่อนเริ่มงานใหม่
@@ -125,8 +144,8 @@ export async function CreateWorkingActionsJob(
     );
 
     const [res] = await conn.query<ResultSetHeader>(
-      "INSERT INTO WorkingActionJob(wa_start_job,e_id,w_id) VALUES (?, ?, ?)",
-      [now, e_id, w_id],
+      "INSERT INTO WorkingActionJob(wa_start_job,e_id,w_id,wp_id) VALUES (?, ?, ?, ?)",
+      [now, e_id, w_id, workplaceId],
     );
 
     await conn.commit();
@@ -183,6 +202,19 @@ export async function CreateWorkingActionsJobManual(
   try {
     await conn.beginTransaction();
 
+    const workplaceId = await getEmpWorkplaceId(e_id);
+    if (workplaceId === null) {
+      throw new ApiError(400, "ไม่พบข้อมูลสาขาของพนักงาน");
+    }
+
+    const [masters] = await conn.query<RowDataPacket[]>(
+      "SELECT 1 FROM WorkingMaster WHERE w_id = ? AND e_id = ? AND wp_id = ? LIMIT 1",
+      [w_id, e_id, workplaceId],
+    );
+    if (masters.length === 0) {
+      throw new ApiError(404, CommonMessages.notFound);
+    }
+
     // งานอื่นของพนักงานคนเดียวกันที่เวลาทับซ้อนกับช่วงที่กำลังจะบันทึก (รวมงานที่ยังเปิดค้างอยู่ - wa_end_job IS NULL)
     const [conflicts] = await conn.query<(RowDataPacket & {
       wa_start_job: Date;
@@ -207,8 +239,8 @@ export async function CreateWorkingActionsJobManual(
     }
 
     const [inserted] = await conn.query<ResultSetHeader>(
-      "INSERT INTO WorkingActionJob(wa_start_job,e_id,w_id) VALUES (?, ?, ?)",
-      [wa_start_job, e_id, w_id],
+      "INSERT INTO WorkingActionJob(wa_start_job,e_id,w_id,wp_id) VALUES (?, ?, ?, ?)",
+      [wa_start_job, e_id, w_id, workplaceId],
     );
 
     await conn.query<ResultSetHeader>(
@@ -259,7 +291,7 @@ export async function UpdateWorkingActionsJobAutoSystem(): Promise<number> {
 }
 
 // update กดปิดงานปกติ (ปิดเฉพาะ wa_status/wa_end_job เท่านั้น ห้ามแก้ field อื่น)
-export async function UpdateWorkingActionsJob(wa_id: number): Promise<number> {
+export async function UpdateWorkingActionsJob(wa_id: number, e_id: number, workplaceId: number): Promise<number> {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -271,8 +303,8 @@ export async function UpdateWorkingActionsJob(wa_id: number): Promise<number> {
       `UPDATE WorkingActionJob a
        INNER JOIN WorkingMaster b ON b.w_id = a.w_id
        SET a.wa_status = ?, a.wa_end_job = ?, ${SNAPSHOT_MASTER_ON_CLOSE_SQL}
-       WHERE a.wa_id = ? AND a.wa_end_job IS NULL`,
-      [wa_status, wa_end_job, wa_id],
+       WHERE a.wa_id = ? AND a.e_id = ? AND COALESCE(a.wp_id, b.wp_id) = ? AND a.wa_end_job IS NULL`,
+      [wa_status, wa_end_job, wa_id, e_id, workplaceId],
     );
     await conn.commit();
     return res.affectedRows;
@@ -289,6 +321,7 @@ export async function UpdateWorkingActionsJob(wa_id: number): Promise<number> {
 export async function UpdateWorkingActionsJobByAdmin(
   wa_id: number,
   input: WorkingActions,
+  workplaceId?: number,
 ): Promise<WorkingActionsDTO> {
   const conn = await pool.getConnection();
   try {
@@ -301,19 +334,25 @@ export async function UpdateWorkingActionsJobByAdmin(
       edit_date: new Date(),
     };
     // admin แก้เวลาได้ทั้งงานที่ยังเปิดอยู่ (ปิดงานให้ทันที ต้อง snapshot) และงานที่ปิดไปแล้ว (SNAPSHOT_MASTER_ON_CLOSE_SQL เป็น COALESCE จึงไม่ทับ snapshot เดิม)
+    const workplaceCondition = workplaceId === undefined
+      ? ""
+      : "AND COALESCE(a.wp_id, b.wp_id) = ?";
+    const params: unknown[] = [
+      data.wa_start_job,
+      data.wa_end_job,
+      data.wa_status,
+      data.user_edit,
+      data.edit_date,
+      wa_id,
+    ];
+    if (workplaceId !== undefined) params.push(workplaceId);
+
     const [res] = await conn.query<ResultSetHeader>(
       `UPDATE WorkingActionJob a
        INNER JOIN WorkingMaster b ON b.w_id = a.w_id
        SET a.wa_start_job = ?, a.wa_end_job = ?, a.wa_status = ?, a.user_edit = ?, a.edit_date = ?, ${SNAPSHOT_MASTER_ON_CLOSE_SQL}
-       WHERE a.wa_id = ?`,
-      [
-        data.wa_start_job,
-        data.wa_end_job,
-        data.wa_status,
-        data.user_edit,
-        data.edit_date,
-        wa_id,
-      ],
+       WHERE a.wa_id = ? ${workplaceCondition}`,
+      params,
     );
     if (res.affectedRows === 0) {
       throw new ApiError(404, CommonMessages.notFound);
@@ -336,6 +375,7 @@ export async function UpdateWorkingActionJobDetail(
   wa_id: number,
   input: WorkingActionJobDetailInput,
   user_edit: number,
+  workplaceId: number,
 ): Promise<number> {
   const conn = await pool.getConnection();
   try {
@@ -355,8 +395,8 @@ export async function UpdateWorkingActionJobDetail(
       edit_date: new Date(),
     };
     const [res] = await conn.query<ResultSetHeader>(
-      "UPDATE WorkingActionJob SET ? WHERE wa_id = ?",
-      [data, wa_id],
+      "UPDATE WorkingActionJob SET ? WHERE wa_id = ? AND wp_id = ?",
+      [data, wa_id, workplaceId],
     );
     if (res.affectedRows === 0) {
       throw new ApiError(404, CommonMessages.notFound);

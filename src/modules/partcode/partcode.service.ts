@@ -8,11 +8,14 @@ import {
 } from "../../errors/ApiError";
 import { CommonMessages, UserMessages } from "../../messages";
 import { getDepartmentNamesByIds, getEMPNameByIds } from "../emp/emp.service";
+import { getWorkplaceNamesByIds } from "../workplace/workplace.service";
 
-export async function ListPartCode(): Promise<PartCodeDTO[]> {
+export async function ListPartCode(workplaceId?: number): Promise<PartCodeDTO[]> {
+  const where = workplaceId === undefined ? "" : "WHERE wp_id = ?";
   const [rows] = await pool.query<(RowDataPacket & PartCodeDTO)[]>(
-    `SELECT part_id, CAST(part_code AS CHAR) AS part_code, part_descriptions, dp_id, add_date, e_id
-     FROM PartCode Order by part_code asc `,
+    `SELECT part_id, CAST(part_code AS CHAR) AS part_code, part_descriptions, dp_id, add_date, e_id,wp_id
+     FROM PartCode ${where} Order by part_code asc `,
+    workplaceId === undefined ? [] : [workplaceId],
   );
 
   const departmentById = await getDepartmentNamesByIds([
@@ -21,11 +24,14 @@ export async function ListPartCode(): Promise<PartCodeDTO[]> {
   const empNameById = await getEMPNameByIds([
     ...new Set(rows.map((row) => row.e_id)),
   ]);
-
+  const workplaceById = await getWorkplaceNamesByIds([
+    ...new Set(rows.map((row) => row.wp_id)),
+  ]);
   return rows.map((row) => ({
     ...row,
     dp_department: departmentById.get(row.dp_id) ?? null,
     e_name: empNameById.get(row.e_id) ?? null,
+    wp_name: workplaceById.get(row.wp_id) ?? null,
   }));
 }
 
@@ -40,6 +46,7 @@ export async function CreatePartCode(input: PartCode): Promise<number> {
         part_code: input.part_code,
         part_descriptions: input.part_descriptions,
         dp_id: input.dp_id,
+        wp_id: input.wp_id,
         e_id: input.e_id,
       },
     );
@@ -57,11 +64,13 @@ export async function CreatePartCode(input: PartCode): Promise<number> {
 export async function UpdatePartCode(
   part_id: number,
   input: PartCode,
+  scopeWorkplaceId?: number,
 ): Promise<PartCodeDTO> {
   const data = {
     part_code: input.part_code,
     part_descriptions: input.part_descriptions,
     dp_id: input.dp_id,
+    wp_id: input.wp_id,
     e_id: input.e_id,
   };
 
@@ -70,8 +79,12 @@ export async function UpdatePartCode(
   try {
     await conn.beginTransaction();
     const [res] = await conn.query<ResultSetHeader>(
-      "Update PartCode SET ? WHERE part_id =?",
-      [data, part_id],
+      scopeWorkplaceId === undefined
+        ? "UPDATE PartCode SET ? WHERE part_id = ?"
+        : "UPDATE PartCode SET ? WHERE part_id = ? AND wp_id = ?",
+      scopeWorkplaceId === undefined
+        ? [data, part_id]
+        : [data, part_id, scopeWorkplaceId],
     );
 
     if (res.affectedRows === 0) {
@@ -79,11 +92,13 @@ export async function UpdatePartCode(
     }
 
     const departmentById = await getDepartmentNamesByIds([data.dp_id]);
+    const workplaceById = await getWorkplaceNamesByIds([input.wp_id]);
     await conn.commit();
     return {
       part_id: part_id,
       ...data,
       dp_department: departmentById.get(data.dp_id) ?? null,
+      wp_name: workplaceById.get(input.wp_id) ?? null,
     };
   } catch (err) {
     await conn.rollback();
@@ -94,14 +109,16 @@ export async function UpdatePartCode(
   }
 }
 
-export async function DeletePartCode(id: number): Promise<void> {
+export async function DeletePartCode(id: number, workplaceId?: number): Promise<void> {
   const conn = await pool.getConnection();
 
   try {
     await conn.beginTransaction();
     const [res] = await conn.query<ResultSetHeader>(
-      "DELETE FROM PartCode WHERE part_id = ?",
-      [id],
+      workplaceId === undefined
+        ? "DELETE FROM PartCode WHERE part_id = ?"
+        : "DELETE FROM PartCode WHERE part_id = ? AND wp_id = ?",
+      workplaceId === undefined ? [id] : [id, workplaceId],
     );
 
     if (res.affectedRows === 0) {
