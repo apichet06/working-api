@@ -1,7 +1,11 @@
 import { ResultSetHeader, RowDataPacket } from "mysql2";
 import { pool } from "../../db/pool";
 import { WorkingMaster, WorkingMasterDTO } from "./type";
-import { ApiError, isDupError, isFkConstraintError } from "../../errors/ApiError";
+import {
+  ApiError,
+  isDupError,
+  isFkConstraintError,
+} from "../../errors/ApiError";
 import { CommonMessages } from "../../messages";
 import { SNAPSHOT_MASTER_ON_CLOSE_SQL } from "../workingactoinsjob/action.service";
 import { getEmpDepartmentId, getEmpWorkplaceId } from "../emp/emp.service";
@@ -32,13 +36,15 @@ const WORKING_MASTER_SELECT = `
 `;
 
 // แสดงค้างไว้ทุกวันจนกว่าจะกด "จบงาน" (end_job = 1) ไม่จำกัดแค่วันนี้เหมือนเดิม
-export async function ListWorkingMaster(e_id: number): Promise<WorkingMasterDTO[]> {
-    const departmentId = await getEmpDepartmentId(e_id);
-    const [rows] = await pool.query<(WorkingMasterDTO & RowDataPacket)[]>(
-        `${WORKING_MASTER_SELECT} WHERE a.e_id = ? and a.end_job = 0 ORDER BY a.w_id asc`,
-        [departmentId, e_id]
-    );
-    return rows;
+export async function ListWorkingMaster(
+  e_id: number,
+): Promise<WorkingMasterDTO[]> {
+  const departmentId = await getEmpDepartmentId(e_id);
+  const [rows] = await pool.query<(WorkingMasterDTO & RowDataPacket)[]>(
+    `${WORKING_MASTER_SELECT} WHERE a.e_id = ? and a.end_job = 0 ORDER BY a.w_id asc`,
+    [departmentId, e_id],
+  );
+  return rows;
 }
 
 // สำหรับหน้า working checking: ดู/แก้ไขงานย้อนหลังของตัวเอง (ไม่จำกัดแค่วันนี้เหมือน ListWorkingMaster)
@@ -46,10 +52,14 @@ export async function ListWorkingMaster(e_id: number): Promise<WorkingMasterDTO[
 // เพราะ WorkingMaster ตัวเดียวค้างข้ามหลายวันได้ ถ้ายังผูกกับ w_date/wa_id ล่าสุดของ master แถวเดียว
 // wa_id ที่ได้จะไม่ตรงกับวันที่กำลังดู/แก้ไขอยู่ — ที่นี่กรองด้วยวันที่ของ WorkingActionJob เอง (wa_start_job) แทน ให้แต่ละแถวสัมพันธ์กันจริง
 // classification ใช้ COALESCE(a.field, b.field) แบบเดียวกับ read path อื่นๆ (อ่าน snapshot ของ WorkingActionJob ก่อนเสมอ ไม่ join สดกับ WorkingMaster ถ้าปิดงานไปแล้ว)
-export async function ListWorkingMasterHistory(e_id: number, from: string, to: string): Promise<WorkingMasterDTO[]> {
-    const departmentId = await getEmpDepartmentId(e_id);
-    const [rows] = await pool.query<(WorkingMasterDTO & RowDataPacket)[]>(
-        `SELECT b.w_id, COALESCE(a.wp_id, b.wp_id) AS wp_id, b.e_usercode, COALESCE(a.job_code, b.job_code) AS job_code, COALESCE(a.job_id, b.job_id) AS job_id,
+export async function ListWorkingMasterHistory(
+  e_id: number,
+  from: string,
+  to: string,
+): Promise<WorkingMasterDTO[]> {
+  const departmentId = await getEmpDepartmentId(e_id);
+  const [rows] = await pool.query<(WorkingMasterDTO & RowDataPacket)[]>(
+    `SELECT b.w_id, COALESCE(a.wp_id, b.wp_id) AS wp_id, b.e_usercode, COALESCE(a.job_code, b.job_code) AS job_code, COALESCE(a.job_id, b.job_id) AS job_id,
                 COALESCE(a.w_project_no, b.w_project_no) AS w_project_no, COALESCE(a.cc_id, b.cc_id) AS cc_id,
                 COALESCE(a.part_id, b.part_id) AS part_id, COALESCE(a.mac_id, b.mac_id) AS mac_id,
                 COALESCE(a.cc_code, b.cc_code) AS cc_code, COALESCE(a.part_code, b.part_code) AS part_code,
@@ -66,152 +76,166 @@ export async function ListWorkingMasterHistory(e_id: number, from: string, to: s
          INNER JOIN JobCode d ON COALESCE(a.job_id, b.job_id) = d.job_id
          INNER JOIN PartCode e ON COALESCE(a.part_id, b.part_id) = e.part_id
          LEFT JOIN Machine_code f ON f.mac_id = COALESCE(a.mac_id, b.mac_id)
-         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no) AND g.dp_id = ?
+         LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no) AND g.dp_id = ? AND g.wp_id = COALESCE(a.wp_id, b.wp_id)
          WHERE a.e_id = ? AND DATE(a.wa_start_job) BETWEEN ? AND ? AND a.wa_end_job IS NOT NULL
          ORDER BY a.wa_start_job DESC`,
-        [departmentId, e_id, from, to]
+    [departmentId, e_id, from, to],
+  );
+  // mysql2 ส่งค่าจาก ROUND() (DECIMAL) กลับมาเป็น string โดย default ต้อง cast เป็น number เอง
+  return rows.map((row) => ({
+    ...row,
+    job_hour: Number(row.job_hour),
+    labour_hour: Number(row.labour_hour),
+  }));
+}
+
+export async function CreateWorkingMaster(
+  input: WorkingMaster,
+): Promise<number> {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const workplaceId = await getEmpWorkplaceId(input.e_id);
+    if (workplaceId === null) {
+      throw new ApiError(400, "ไม่พบข้อมูลสาขาของพนักงาน");
+    }
+    const data = {
+      wp_id: workplaceId,
+      e_usercode: input.e_usercode,
+      job_code: input.job_code,
+      job_id: input.job_id,
+      cc_id: input.cc_id,
+      part_id: input.part_id,
+      mac_id: input.mac_id,
+      mac_code: input.mac_code,
+      cc_code: input.cc_code,
+      part_code: input.part_code,
+      w_desc: input.w_desc,
+      e_id: input.e_id,
+      w_date: new Date(),
+      w_project_no: input.w_project_no,
+    };
+    const [res] = await conn.query<ResultSetHeader>(
+      "INSERT INTO WorkingMaster SET ?",
+      [data],
     );
-    // mysql2 ส่งค่าจาก ROUND() (DECIMAL) กลับมาเป็น string โดย default ต้อง cast เป็น number เอง
-    return rows.map((row) => ({
-        ...row,
-        job_hour: Number(row.job_hour),
-        labour_hour: Number(row.labour_hour),
-    }));
+    await conn.commit();
+    return res.insertId;
+  } catch (err) {
+    await conn.rollback();
+    if (isDupError(err)) throw new ApiError(409, CommonMessages.error);
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
 
-export async function CreateWorkingMaster(input: WorkingMaster): Promise<number> {
-    const conn = await pool.getConnection();
-    try {
-        await conn.beginTransaction()
-        const workplaceId = await getEmpWorkplaceId(input.e_id);
-        if (workplaceId === null) {
-            throw new ApiError(400, "ไม่พบข้อมูลสาขาของพนักงาน");
-        }
-        const data = {
-            wp_id: workplaceId,
-            e_usercode: input.e_usercode,
-            job_code: input.job_code,
-            job_id: input.job_id,
-            cc_id: input.cc_id,
-            part_id: input.part_id,
-            mac_id: input.mac_id,
-            mac_code: input.mac_code,
-            cc_code: input.cc_code,
-            part_code: input.part_code,
-            w_desc: input.w_desc,
-            e_id: input.e_id,
-            w_date: new Date(),
-            w_project_no: input.w_project_no
-        }
-        const [res] = await conn.query<ResultSetHeader>(
-            "INSERT INTO WorkingMaster SET ?", [data]
-        );
-        await conn.commit();
-        return res.insertId;
-
-    } catch (err) {
-        await conn.rollback();
-        if (isDupError(err)) throw new ApiError(409, CommonMessages.error);
-        throw err;
-    } finally {
-        conn.release();
+export async function UpdateWorkingMaster(
+  w_id: number,
+  input: WorkingMaster,
+): Promise<WorkingMasterDTO> {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const departmentId = await getEmpDepartmentId(input.e_id);
+    const workplaceId = await getEmpWorkplaceId(input.e_id);
+    if (workplaceId === null) {
+      throw new ApiError(400, "ไม่พบข้อมูลสาขาของพนักงาน");
     }
+    const data = {
+      wp_id: workplaceId,
+      e_usercode: input.e_usercode,
+      job_code: input.job_code,
+      job_id: input.job_id,
+      cc_id: input.cc_id,
+      part_id: input.part_id,
+      mac_id: input.mac_id,
+      mac_code: input.mac_code,
+      cc_code: input.cc_code,
+      part_code: input.part_code,
+      w_desc: input.w_desc,
+      e_id: input.e_id,
+      w_project_no: input.w_project_no,
+    };
+    const [res] = await conn.query<ResultSetHeader>(
+      "UPDATE WorkingMaster SET ? WHERE w_id = ? AND e_id = ? AND wp_id = ?",
+      [data, w_id, input.e_id, workplaceId],
+    );
+    if (res.affectedRows === 0) {
+      throw new ApiError(404, CommonMessages.notFound);
+    }
+
+    const [rows] = await conn.query<(WorkingMasterDTO & RowDataPacket)[]>(
+      `${WORKING_MASTER_SELECT} WHERE a.w_id = ? AND a.e_id = ? AND a.wp_id = ?`,
+      [departmentId, w_id, input.e_id, workplaceId],
+    );
+
+    await conn.commit();
+    return rows[0];
+  } catch (err) {
+    await conn.rollback();
+    if (isDupError(err)) throw new ApiError(409, CommonMessages.error);
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
+export async function EndWorkingMaster(
+  w_id: number,
+  e_id: number,
+  workplaceId: number,
+): Promise<void> {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
 
-
-export async function UpdateWorkingMaster(w_id: number, input: WorkingMaster): Promise<WorkingMasterDTO> {
-    const conn = await pool.getConnection();
-    try {
-        await conn.beginTransaction()
-        const departmentId = await getEmpDepartmentId(input.e_id);
-        const workplaceId = await getEmpWorkplaceId(input.e_id);
-        if (workplaceId === null) {
-            throw new ApiError(400, "ไม่พบข้อมูลสาขาของพนักงาน");
-        }
-        const data = {
-            wp_id: workplaceId,
-            e_usercode: input.e_usercode,
-            job_code: input.job_code,
-            job_id: input.job_id,
-            cc_id: input.cc_id,
-            part_id: input.part_id,
-            mac_id: input.mac_id,
-            mac_code: input.mac_code,
-            cc_code: input.cc_code,
-            part_code: input.part_code,
-            w_desc: input.w_desc,
-            e_id: input.e_id,
-            w_project_no: input.w_project_no
-        };
-        const [res] = await conn.query<ResultSetHeader>(
-            "UPDATE WorkingMaster SET ? WHERE w_id = ? AND e_id = ? AND wp_id = ?", [data, w_id, input.e_id, workplaceId]
-        );
-        if (res.affectedRows === 0) {
-            throw new ApiError(404, CommonMessages.notFound);
-        }
-
-        const [rows] = await conn.query<(WorkingMasterDTO & RowDataPacket)[]>(
-            `${WORKING_MASTER_SELECT} WHERE a.w_id = ? AND a.e_id = ? AND a.wp_id = ?`, [departmentId, w_id, input.e_id, workplaceId]
-        );
-
-        await conn.commit();
-        return rows[0];
-    } catch (err) {
-        await conn.rollback();
-        if (isDupError(err)) throw new ApiError(409, CommonMessages.error);
-        throw err;
-    }
-    finally {
-        conn.release();
-    }
-}
-export async function EndWorkingMaster(w_id: number, e_id: number, workplaceId: number): Promise<void> {
-    const conn = await pool.getConnection();
-    try {
-        await conn.beginTransaction();
-
-        // ถ้ายังมี timer ค้างอยู่ (กด "เริ่มงาน" ไว้แต่ยังไม่ได้ "ปิดงาน") ให้ปิดให้อัตโนมัติตอนจบงาน
-        await conn.query<ResultSetHeader>(
-            `UPDATE WorkingActionJob a
+    // ถ้ายังมี timer ค้างอยู่ (กด "เริ่มงาน" ไว้แต่ยังไม่ได้ "ปิดงาน") ให้ปิดให้อัตโนมัติตอนจบงาน
+    await conn.query<ResultSetHeader>(
+      `UPDATE WorkingActionJob a
              INNER JOIN WorkingMaster b ON b.w_id = a.w_id
              SET a.wa_status = ?, a.wa_end_job = ?, ${SNAPSHOT_MASTER_ON_CLOSE_SQL}
              WHERE a.w_id = ? AND a.e_id = ? AND COALESCE(a.wp_id, b.wp_id) = ? AND a.wa_end_job IS NULL`,
-            ["ผู้ใช้จบงาน", new Date(), w_id, e_id, workplaceId]
-        );
+      ["ผู้ใช้จบงาน", new Date(), w_id, e_id, workplaceId],
+    );
 
-        const [res] = await conn.query<ResultSetHeader>(
-            "UPDATE WorkingMaster SET end_job = 1 WHERE w_id = ? AND e_id = ? AND wp_id = ?", [w_id, e_id, workplaceId]
-        );
-        if (res.affectedRows === 0) {
-            throw new ApiError(404, CommonMessages.notFound);
-        }
-
-        await conn.commit();
-    } catch (err) {
-        await conn.rollback();
-        throw err;
-    } finally {
-        conn.release();
+    const [res] = await conn.query<ResultSetHeader>(
+      "UPDATE WorkingMaster SET end_job = 1 WHERE w_id = ? AND e_id = ? AND wp_id = ?",
+      [w_id, e_id, workplaceId],
+    );
+    if (res.affectedRows === 0) {
+      throw new ApiError(404, CommonMessages.notFound);
     }
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 }
 
-export async function DeleteWorkingMaster(w_id: number, e_id: number, workplaceId: number): Promise<void> {
-    const conn = await pool.getConnection();
-    try {
-        await conn.beginTransaction()
-        const [res] = await conn.query<ResultSetHeader>(
-            "DELETE FROM WorkingMaster WHERE w_id = ? AND e_id = ? AND wp_id = ?", [w_id, e_id, workplaceId]
-        );
-        if (res.affectedRows === 0) {
-            throw new ApiError(404, CommonMessages.notFound);
-        }
-        await conn.commit();
-    } catch (err) {
-        await conn.rollback();
-        if (isFkConstraintError(err)) throw new ApiError(409, CommonMessages.used);
-        throw err;
+export async function DeleteWorkingMaster(
+  w_id: number,
+  e_id: number,
+  workplaceId: number,
+): Promise<void> {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [res] = await conn.query<ResultSetHeader>(
+      "DELETE FROM WorkingMaster WHERE w_id = ? AND e_id = ? AND wp_id = ?",
+      [w_id, e_id, workplaceId],
+    );
+    if (res.affectedRows === 0) {
+      throw new ApiError(404, CommonMessages.notFound);
     }
-    finally {
-        conn.release();
-    }
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    if (isFkConstraintError(err)) throw new ApiError(409, CommonMessages.used);
+    throw err;
+  } finally {
+    conn.release();
+  }
 }

@@ -9,7 +9,12 @@ import {
 import { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { ApiError, isDupError } from "../../errors/ApiError";
 import { CommonMessages } from "../../messages";
-import { getEMPNameByIds, getEmpDepartmentId, getEmpDepartmentIdByUsercode, getEmpWorkplaceId } from "../emp/emp.service";
+import {
+  getEMPNameByIds,
+  getEmpDepartmentId,
+  getEmpDepartmentIdByUsercode,
+  getEmpWorkplaceId,
+} from "../emp/emp.service";
 
 // เติมค่า classification จาก WorkingMaster ลง WorkingActionJob ตอนปิดงาน (ครั้งเดียว)
 // COALESCE(a.field, b.field) กันไม่ให้ทับ snapshot เดิมถ้า row นี้เคยถูกปิด/snapshot ไปแล้ว
@@ -66,7 +71,7 @@ export async function ListWorkingActions(
             INNER JOIN JobCode d ON COALESCE(a.job_id, b.job_id) = d.job_id
             INNER JOIN PartCode e ON COALESCE(a.part_id, b.part_id) = e.part_id
             LEFT JOIN Machine_code f ON f.mac_id = COALESCE(a.mac_id, b.mac_id)
-            LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no) AND g.dp_id = ?
+            LEFT JOIN DieCode g ON CAST(g.die_code AS CHAR) = COALESCE(a.w_project_no, b.w_project_no) AND g.dp_id = ? AND g.wp_id = COALESCE(a.wp_id, b.wp_id)
             WHERE ${conditions.join(" AND ")}
             ORDER BY a.wa_id desc`,
     [departmentId, ...params],
@@ -103,7 +108,7 @@ export async function ListWorkingActionsForCalendar(
          INNER JOIN Category_Code c ON c.cc_id = COALESCE(b.cc_id, a.cc_id)
          INNER JOIN JobCode d ON d.job_id = COALESCE(b.job_id, a.job_id)
          INNER JOIN PartCode e ON e.part_id = COALESCE(b.part_id, a.part_id)
-         LEFT JOIN DieCode f ON CAST(f.die_code AS CHAR) = COALESCE(b.w_project_no, a.w_project_no) AND f.dp_id = ?
+         LEFT JOIN DieCode f ON CAST(f.die_code AS CHAR) = COALESCE(b.w_project_no, a.w_project_no) AND f.dp_id = ? AND f.wp_id = COALESCE(b.wp_id, a.wp_id)
          WHERE b.e_id = ? AND DATE(b.wa_start_job) BETWEEN ? AND ?
          ORDER BY b.wa_id ASC`,
     [departmentId, e_id, from, to],
@@ -189,7 +194,10 @@ export async function CreateWorkingActionsJobManual(
   );
 
   if (startDateKey !== endDateKey || !allowedDateKeys.has(startDateKey)) {
-    throw new ApiError(400, "วันที่ทำงานต้องอยู่ภายใน 7 วันย้อนหลังรวมวันปัจจุบัน และเวลาเริ่ม/หยุดต้องอยู่ในวันเดียวกัน");
+    throw new ApiError(
+      400,
+      "วันที่ทำงานต้องอยู่ภายใน 7 วันย้อนหลังรวมวันปัจจุบัน และเวลาเริ่ม/หยุดต้องอยู่ในวันเดียวกัน",
+    );
   }
   if (!(wa_start_job.getTime() < wa_end_job.getTime())) {
     throw new ApiError(400, "เวลาเริ่มต้องอยู่ก่อนเวลาจบ");
@@ -216,11 +224,13 @@ export async function CreateWorkingActionsJobManual(
     }
 
     // งานอื่นของพนักงานคนเดียวกันที่เวลาทับซ้อนกับช่วงที่กำลังจะบันทึก (รวมงานที่ยังเปิดค้างอยู่ - wa_end_job IS NULL)
-    const [conflicts] = await conn.query<(RowDataPacket & {
-      wa_start_job: Date;
-      wa_end_job: Date | null;
-      job_code: string;
-    })[]>(
+    const [conflicts] = await conn.query<
+      (RowDataPacket & {
+        wa_start_job: Date;
+        wa_end_job: Date | null;
+        job_code: string;
+      })[]
+    >(
       `SELECT a.wa_start_job, a.wa_end_job, COALESCE(a.job_code, b.job_code) AS job_code
        FROM WorkingActionJob a
        INNER JOIN WorkingMaster b ON b.w_id = a.w_id
@@ -291,7 +301,11 @@ export async function UpdateWorkingActionsJobAutoSystem(): Promise<number> {
 }
 
 // update กดปิดงานปกติ (ปิดเฉพาะ wa_status/wa_end_job เท่านั้น ห้ามแก้ field อื่น)
-export async function UpdateWorkingActionsJob(wa_id: number, e_id: number, workplaceId: number): Promise<number> {
+export async function UpdateWorkingActionsJob(
+  wa_id: number,
+  e_id: number,
+  workplaceId: number,
+): Promise<number> {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -334,9 +348,8 @@ export async function UpdateWorkingActionsJobByAdmin(
       edit_date: new Date(),
     };
     // admin แก้เวลาได้ทั้งงานที่ยังเปิดอยู่ (ปิดงานให้ทันที ต้อง snapshot) และงานที่ปิดไปแล้ว (SNAPSHOT_MASTER_ON_CLOSE_SQL เป็น COALESCE จึงไม่ทับ snapshot เดิม)
-    const workplaceCondition = workplaceId === undefined
-      ? ""
-      : "AND COALESCE(a.wp_id, b.wp_id) = ?";
+    const workplaceCondition =
+      workplaceId === undefined ? "" : "AND COALESCE(a.wp_id, b.wp_id) = ?";
     const params: unknown[] = [
       data.wa_start_job,
       data.wa_end_job,
