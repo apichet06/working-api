@@ -1,5 +1,10 @@
 import { RowDataPacket } from "mysql2";
-import { ReportMasterCodeDTO, WorkingReportDTO, WorkingReportTemplateDTO, WorkingReportTemplateRowDTO } from "./type";
+import {
+  ReportMasterCodeDTO,
+  WorkingReportDTO,
+  WorkingReportTemplateDTO,
+  WorkingReportTemplateRowDTO,
+} from "./type";
 import { pool } from "../../db/pool";
 import {
   getEmpIdsByDepartmentId,
@@ -13,15 +18,19 @@ export const GetListWorkingReport = async (
   e_ids: number[] | null,
   startDate: string,
   endDate: string,
-  workplaceId: number,
+  wrokplaceId: number | null,
 ): Promise<WorkingReportDTO[]> => {
   const conditions = [
     "DATE(a.wa_start_job) BETWEEN ? AND ?",
     "a.wa_end_job IS NOT NULL",
-    "COALESCE(a.wp_id, b.wp_id) = ?",
   ];
-  const params: unknown[] = [startDate, endDate, workplaceId];
+  const params: unknown[] = [startDate, endDate];
 
+  // null = ไม่กรองสาขา (เช่น e_id 2 เห็นทุกสาขา)
+  if (wrokplaceId !== null) {
+    conditions.push("COALESCE(a.wp_id, b.wp_id) = ?");
+    params.push(wrokplaceId);
+  }
   // ไม่ระบุ e_ids = ไม่กรองพนักงาน อ่านทุกคน
   if (e_ids && e_ids.length > 0) {
     conditions.unshift("a.e_id IN (?)");
@@ -74,10 +83,15 @@ export const GetWorkingReportTemplate = async (
   endDate: string,
   workplaceId: number,
 ): Promise<WorkingReportTemplateDTO> => {
-  const departmentEmployeeIds = await getEmpIdsByDepartmentId(TEMPLATE_DEPARTMENT_ID, workplaceId);
+  const departmentEmployeeIds = await getEmpIdsByDepartmentId(
+    TEMPLATE_DEPARTMENT_ID,
+    workplaceId,
+  );
   const departmentEmployeeIdSet = new Set(departmentEmployeeIds);
   const employeeIds = requestedEmployeeIds
-    ? [...new Set(requestedEmployeeIds)].filter((id) => departmentEmployeeIdSet.has(id))
+    ? [...new Set(requestedEmployeeIds)].filter((id) =>
+        departmentEmployeeIdSet.has(id),
+      )
     : departmentEmployeeIds;
 
   const codeQueries = await Promise.all([
@@ -106,7 +120,8 @@ export const GetWorkingReportTemplate = async (
   let rows: WorkingReportTemplateRowDTO[] = [];
   if (employeeIds.length > 0) {
     const [rawRows] = await pool.query<
-      (Omit<WorkingReportTemplateRowDTO, "e_firstname_th" | "wp_name_en"> & RowDataPacket)[]
+      (Omit<WorkingReportTemplateRowDTO, "e_firstname_th" | "wp_name_en"> &
+        RowDataPacket)[]
     >(
       `SELECT a.wa_id, a.e_id, b.e_usercode,
               DATE_FORMAT(a.wa_start_job, '%Y-%m-%d') AS working_date,
